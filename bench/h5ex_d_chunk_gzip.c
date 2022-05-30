@@ -44,7 +44,7 @@ main (void)
     hsize_t         i, j;
 
     uint8_t ndim = 2;
-    int32_t *offset = malloc(8 * sizeof(int32_t));
+    hsize_t *offset = malloc(8 * sizeof(int32_t));
     int64_t *chunksdim = malloc(8 * sizeof(int64_t ));
     int64_t *nchunk_ndim = malloc(8 * sizeof(int64_t ));
     for ( i = 0; i < ndim; ++i) {
@@ -65,7 +65,7 @@ main (void)
      */
     for (i=0; i< DIM0; i++)
         for (j=0; j< DIM1; j++)
-            wdata[i] = i * j - j;
+            wdata[i * DIM1 + j] = i * j - j;
 
     hid_t           file_cat_w, file_cat_r, file_h5_w, file_h5_r, space, mem_space,
                     dset_cat_w, dset_cat_r, dset_h5_w, dset_h5_r, dcpl;    /* Handles */
@@ -95,13 +95,15 @@ main (void)
         // Get chunk offset
         index_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
-            offset[i] = nchunk_ndim[i] * chunk[i];
+            offset[i] = (hsize_t) nchunk_ndim[i] * chunk[i];
         }
-
+        hsize_t dims_get[2];
+        H5Sget_simple_extent_dims(H5Dget_space(dset_cat_w), dims_get, NULL);
+        printf("offset %llu x %llu, dims %llu x %llu\n", offset[0], offset[1], dims_get[0], dims_get[1]);
         // Use H5Dwrite to save caterva compressed buffer
-    //    status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, (const hsize_t *) offset, chunksize,
-      //                           &wdata[nchunk_ndim[0] * CHUNK0][nchunk_ndim[1] * CHUNK1]);
-
+        status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, chunksize * sizeof(int),
+                                 &wdata[nchunk * chunksize]);
+/*
         start[0] = nchunk_ndim[0] * CHUNK0;
         start[1] = nchunk_ndim[1] * CHUNK1;
         stride[0] = CHUNK0;
@@ -115,7 +117,7 @@ main (void)
         // Use H5Dwrite to compress and save buffer using gzip
         status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                           &wdata[nchunk * chunksize]);
-
+*/
         for (i=0; i<chunksize; i++) {
                 printf(" %d", wdata[nchunk * chunksize + i]);
         }
@@ -153,10 +155,14 @@ main (void)
             offset[i] = nchunk_ndim[i] * chunk[i];
         }
 
-           // Read caterva compressed buffer
-      //     status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, (const hsize_t *) offset, &flt_msk,
-    //                               &rdata[nchunk_ndim[0] * CHUNK0][nchunk_ndim[1] * CHUNK1]);
-
+        // Read caterva compressed buffer
+        status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, (const hsize_t *) offset, &flt_msk,
+                               rdata);
+        for (i=0; i<chunksize; i++) {
+            printf(" %d", rdata[i]);
+        }
+        printf("\n");
+/*
         start[0] = nchunk_ndim[0] * CHUNK0;
         start[1] = nchunk_ndim[1] * CHUNK1;
         stride[0] = CHUNK0;
@@ -173,7 +179,7 @@ main (void)
         for (i=0; i<chunksize; i++) {
                 printf(" %d", rdata[i]);
         }
-
+*/
     }
 
     // Close and release resources.
