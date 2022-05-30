@@ -26,7 +26,7 @@
 int
 main (void)
 {
-    hid_t           file, space, dset, dcpl;    /* Handles */
+    hid_t           file, space, mem_space, dset, dcpl;    /* Handles */
     herr_t          status;
     H5D_layout_t    layout;
     hsize_t         dims[2] = {DIM0, DIM1},
@@ -67,6 +67,8 @@ main (void)
      * size to be the current size.
      */
     space = H5Screate_simple (2, dims, NULL);
+    hsize_t dimsize = dims[0] * dims[1];
+    mem_space = H5Screate_simple (1, &dimsize, NULL);
 
     /*
      * Create the dataset creation property list, and set the chunk
@@ -80,6 +82,12 @@ main (void)
      */
     dset = H5Dcreate (file, DATASET, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
                 H5P_DEFAULT);
+    start[0] = 0;
+    stride[0] = 5 * 7;
+    count[0] = 1;
+    block[0] = 5 * 7;
+    status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count,
+                                  block);
 
 
     /*
@@ -109,7 +117,7 @@ main (void)
     /*
      * Write the data to the dataset.
      */
-    status = H5Dwrite (dset, H5T_NATIVE_INT, H5S_ALL, space, H5P_DEFAULT,
+    status = H5Dwrite (dset, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                 wdata[0]);
 
     /*
@@ -159,6 +167,10 @@ main (void)
             printf ("H5D_LAYOUT_ERROR\n");
     }
 
+    for (i=0; i<DIM0; i++)
+        for (j=0; j<DIM1; j++)
+            rdata[i][j] = 0;
+
     /*
      * Read the data using the default properties.
      */
@@ -172,8 +184,14 @@ main (void)
     block[1] = 7;
     status = H5Sselect_hyperslab (space, H5S_SELECT_SET, start, stride, count,
                                   block);
+    start[0] = 0;
+    stride[0] = 5 * 7;
+    count[0] = 1;
+    block[0] = 5 * 7;
+    status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count,
+                                  block);
 
-    status = H5Dread (dset, H5T_NATIVE_INT, H5S_ALL, space, H5P_DEFAULT,
+    status = H5Dread (dset, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                 rdata[0]);
 
     /*

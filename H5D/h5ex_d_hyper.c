@@ -148,12 +148,12 @@ main (void)
     space = H5Dget_space (dset);
     start[0] = 0;
     start[1] = 1;
-    stride[0] = 4;
-    stride[1] = 4;
-    count[0] = 2;
-    count[1] = 2;
-    block[0] = 2;
-    block[1] = 3;
+    stride[0] = 6;
+    stride[1] = 7;
+    count[0] = 1;
+    count[1] = 1;
+    block[0] = 6;
+    block[1] = 7;
     status = H5Sselect_hyperslab (space, H5S_SELECT_SET, start, stride, count, block);
 
     /*

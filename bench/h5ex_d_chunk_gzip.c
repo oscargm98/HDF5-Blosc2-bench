@@ -67,13 +67,16 @@ main (void)
         for (j=0; j<DIM1; j++)
             wdata[i][j] = i * j - j;
 
-    hid_t           file_cat_w, file_cat_r, file_h5_w, file_h5_r, space, dset_cat_w, dset_cat_r, dset_h5_w, dset_h5_r, dcpl;    /* Handles */
+    hid_t           file_cat_w, file_cat_r, file_h5_w, file_h5_r, space, mem_space,
+                    dset_cat_w, dset_cat_r, dset_h5_w, dset_h5_r, dcpl;    /* Handles */
     herr_t          status;
     unsigned        flt_msk = 0;
 
     file_cat_w = H5Fcreate (FILE_CAT, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     file_h5_w = H5Fcreate (FILE_H5, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     space = H5Screate_simple (2, (const hsize_t *) dims, NULL);
+    hsize_t memsize = (hsize_t) chunksize;
+    mem_space = H5Screate_simple (1, &memsize, NULL);
     dcpl = H5Pcreate (H5P_DATASET_CREATE);
     status = H5Pset_chunk (dcpl, 2, chunk);
     dset_cat_w = H5Dcreate (file_cat_w, DATASET_CAT, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
@@ -81,6 +84,11 @@ main (void)
     status = H5Pset_deflate (dcpl, 1);
     dset_h5_w = H5Dcreate (file_h5_w, DATASET_H5, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
                          H5P_DEFAULT);
+    start[0] = 0;
+    stride[0] = chunksize;
+    count[0] = 1;
+    block[0] = chunksize;
+    status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
 
     for(int nchunk = 0; nchunk < 64; nchunk++) {
         printf("\nchunk %d\n", nchunk);
@@ -91,8 +99,8 @@ main (void)
         }
 
         // Use H5Dwrite to save caterva compressed buffer
-        status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, (const hsize_t *) offset, chunksize,
-                                 &wdata[nchunk_ndim[0] * CHUNK0][nchunk_ndim[1] * CHUNK1]);
+    //    status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, (const hsize_t *) offset, chunksize,
+      //                           &wdata[nchunk_ndim[0] * CHUNK0][nchunk_ndim[1] * CHUNK1]);
 
         start[0] = nchunk_ndim[0] * CHUNK0;
         start[1] = nchunk_ndim[1] * CHUNK1;
@@ -105,7 +113,7 @@ main (void)
         status = H5Sselect_hyperslab (space, H5S_SELECT_SET, start, stride, count,
                                       block);
         // Use H5Dwrite to compress and save buffer using gzip
-        status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, H5S_ALL, space, H5P_DEFAULT,
+        status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                           &wdata[nchunk_ndim[0] * CHUNK0][nchunk_ndim[1] * CHUNK1]);
 
         for (i=0; i<CHUNK0; i++) {
@@ -117,6 +125,7 @@ main (void)
     // Close and release resources.
     status = H5Pclose (dcpl);
     status = H5Sclose (space);
+    status = H5Sclose (mem_space);
     status = H5Fclose (file_cat_w);
     status = H5Fclose (file_h5_w);
     status = H5Dclose (dset_cat_w);
@@ -130,6 +139,12 @@ main (void)
     file_h5_r = H5Fopen (FILE_H5, H5F_ACC_RDONLY, H5P_DEFAULT);
     dset_h5_r = H5Dopen (file_h5_r, DATASET_H5, H5P_DEFAULT);
     space = H5Screate_simple (2, (const hsize_t *) dims, NULL);
+    mem_space = H5Screate_simple (1, &memsize, NULL);
+    start[0] = 0;
+    stride[0] = chunksize;
+    count[0] = 1;
+    block[0] = chunksize;
+    status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
 
     for(int nchunk = 0; nchunk < 64; nchunk++) {
         printf("\nchunk %d\n", nchunk);
@@ -140,8 +155,8 @@ main (void)
         }
 
            // Read caterva compressed buffer
-           status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, (const hsize_t *) offset, &flt_msk,
-                                   &rdata[nchunk_ndim[0] * CHUNK0][nchunk_ndim[1] * CHUNK1]);
+      //     status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, (const hsize_t *) offset, &flt_msk,
+    //                               &rdata[nchunk_ndim[0] * CHUNK0][nchunk_ndim[1] * CHUNK1]);
 
         start[0] = nchunk_ndim[0] * CHUNK0;
         start[1] = nchunk_ndim[1] * CHUNK1;
@@ -154,7 +169,7 @@ main (void)
         status = H5Sselect_hyperslab (space, H5S_SELECT_SET, start, stride, count,
                                       block);
         // Read HDF5 buffer
-        status = H5Dread (dset_h5_r, H5T_NATIVE_INT, H5S_ALL, space, H5P_DEFAULT,
+        status = H5Dread (dset_h5_r, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                           &rdata[nchunk_ndim[0] * CHUNK0][nchunk_ndim[1] * CHUNK1]);
         for (i=0; i<CHUNK0; i++) {
             for (j = 0; j < CHUNK1; j++)
@@ -164,6 +179,8 @@ main (void)
     }
 
     // Close and release resources.
+    status = H5Sclose (space);
+    status = H5Sclose (mem_space);
     status = H5Dclose (dset_cat_r);
     status = H5Fclose (file_cat_r);
     status = H5Dclose (dset_h5_r);
