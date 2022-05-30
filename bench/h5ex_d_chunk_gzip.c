@@ -39,8 +39,8 @@ main (void)
             stride[2],
             count[2],
             block[2];
-    int             wdata[DIM0][DIM1],          /* Write buffer */
-    rdata[DIM0][DIM1];          /* Read buffer */
+    int             wdata[DIM0 * DIM1],          /* Write buffer */
+    rdata[CHUNK0 * CHUNK1];          /* Read buffer */
     hsize_t         i, j;
 
     uint8_t ndim = 2;
@@ -63,9 +63,9 @@ main (void)
     /*
      * Initialize data.
      */
-    for (i=0; i<DIM0; i++)
-        for (j=0; j<DIM1; j++)
-            wdata[i][j] = i * j - j;
+    for (i=0; i< DIM0; i++)
+        for (j=0; j< DIM1; j++)
+            wdata[i] = i * j - j;
 
     hid_t           file_cat_w, file_cat_r, file_h5_w, file_h5_r, space, mem_space,
                     dset_cat_w, dset_cat_r, dset_h5_w, dset_h5_r, dcpl;    /* Handles */
@@ -114,11 +114,10 @@ main (void)
                                       block);
         // Use H5Dwrite to compress and save buffer using gzip
         status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
-                          &wdata[nchunk_ndim[0] * CHUNK0][nchunk_ndim[1] * CHUNK1]);
+                          &wdata[nchunk * chunksize]);
 
-        for (i=0; i<CHUNK0; i++) {
-            for (j = 0; j < CHUNK1; j++)
-                printf(" %d", wdata[nchunk_ndim[0] * CHUNK0 + i][nchunk_ndim[1] * CHUNK1 + j]);
+        for (i=0; i<chunksize; i++) {
+                printf(" %d", wdata[nchunk * chunksize + i]);
         }
     }
 
@@ -170,10 +169,9 @@ main (void)
                                       block);
         // Read HDF5 buffer
         status = H5Dread (dset_h5_r, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
-                          &rdata[nchunk_ndim[0] * CHUNK0][nchunk_ndim[1] * CHUNK1]);
-        for (i=0; i<CHUNK0; i++) {
-            for (j = 0; j < CHUNK1; j++)
-                printf(" %d", rdata[nchunk_ndim[0] * CHUNK0 + i][nchunk_ndim[1] * CHUNK1 + j]);
+                          rdata);
+        for (i=0; i<chunksize; i++) {
+                printf(" %d", rdata[i]);
         }
 
     }
