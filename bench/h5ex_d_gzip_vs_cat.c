@@ -11,7 +11,6 @@
  ************************************************************/
 
 #include "hdf5.h"
-#include "H5DOpublic.h"
 #include "caterva.h"
 #include "caterva_utils.h"
 #include "blosc2.h"
@@ -27,13 +26,21 @@ int comp(blosc2_schunk* schunk)
 {
     blosc_init();
 
+    caterva_config_t cfg = CATERVA_CONFIG_DEFAULTS;
+    caterva_ctx_t *ctx;
+    caterva_ctx_new(&cfg, &ctx);
+    caterva_array_t *arr;
+    caterva_from_schunk(ctx, schunk, &arr);
+
     uint8_t ndim;
     int64_t *shape = malloc(8 * sizeof(int64_t));
+    int64_t *extshape = malloc(8 * sizeof(int64_t));
     int32_t *chunkmeta = malloc(8 * sizeof(int32_t ));
     int32_t *blockmeta = malloc(8 * sizeof(int32_t ));
     int64_t *chunkshape = malloc(8 * sizeof(int64_t ));
+    int64_t *extchunkshape = arr->extchunkshape;
     int64_t *blockshape = malloc(8 * sizeof(int64_t ));
-    int32_t *offset = malloc(8 * sizeof(int32_t));
+    hsize_t *offset = malloc(8 * sizeof(int32_t));
     int64_t *chunksdim = malloc(8 * sizeof(int64_t ));
     int64_t *nchunk_ndim = malloc(8 * sizeof(int64_t ));
     uint8_t *smeta;
@@ -47,17 +54,22 @@ int comp(blosc2_schunk* schunk)
     }
     deserialize_meta(smeta, smeta_len, &ndim, shape, chunkmeta, blockmeta);
     free(smeta);
+    hsize_t chunks[8];
+    int64_t chunknelems = 1;
     for (int i = 0; i < ndim; ++i) {
         offset[i] = nchunk_ndim[i] = 0;
         chunkshape[i] = chunkmeta[i];
         blockshape[i] = blockmeta[i];
         chunksdim[i] = (shape[i] - 1) / chunkshape[i] + 1;
+        extshape[i] = extchunkshape[i] * chunksdim[i];
+        chunknelems *= extchunkshape[i];
+        chunks[i] = extchunkshape[i];
     }
 
     blosc2_cparams cparams = BLOSC2_CPARAMS_DEFAULTS;
     cparams.compcode = BLOSC_ZLIB;
     cparams.typesize = schunk->typesize;
-    cparams.clevel = 5;
+    cparams.clevel = 1;
     cparams.nthreads = 6;
     cparams.blocksize = schunk->blocksize;
     cparams.schunk = schunk;
@@ -65,7 +77,7 @@ int comp(blosc2_schunk* schunk)
     cctx = blosc2_create_cctx(cparams);
 
     blosc2_dparams dparams = BLOSC2_DPARAMS_DEFAULTS;
-    dparams.nthreads = 1;
+    dparams.nthreads = 6;
     dparams.schunk = schunk;
     blosc2_context *dctx;
     dctx = blosc2_create_dctx(dparams);
@@ -84,19 +96,40 @@ int comp(blosc2_schunk* schunk)
     int cat_cbytes, nbytes;
     cat_cbytes = nbytes = 0;
 
-    hid_t           file_cat, file_h5, space, dset_cat, dset_h5, dcpl;    /* Handles */
+    hsize_t start[8],
+            stride[8],
+            count[8],
+            block[8];
+
+    hid_t           file_cat_w, file_cat_r, file_h5_w, file_h5_r, space, mem_space,
+                    dset_cat_w, dset_cat_r, dset_h5_w, dset_h5_r, dcpl;    /* Handles */
     herr_t          status;
     unsigned        flt_msk = 0;
 
     // Create HDF5 dataset
-    hsize_t chunks[2] = {chunkshape[0], chunkshape[1]};
+    file_cat_w = H5Fcreate (FILE_CAT, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    file_h5_w = H5Fcreate (FILE_H5, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    space = H5Screate_simple (ndim, (const hsize_t *) extshape, NULL);
+    hsize_t memsize = (hsize_t) chunknelems;
+    mem_space = H5Screate_simple (1, &memsize, NULL);
+    dcpl = H5Pcreate (H5P_DATASET_CREATE);
+    status = H5Pset_chunk (dcpl, ndim, chunks);
+    dset_cat_w = H5Dcreate (file_cat_w, DATASET_CAT, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
+                          H5P_DEFAULT);
+    status = H5Pset_deflate (dcpl, 1);
+    dset_h5_w = H5Dcreate (file_h5_w, DATASET_H5, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
+                         H5P_DEFAULT);
+    start[0] = 0;
+    stride[0] = chunknelems;
+    count[0] = 1;
+    block[0] = chunknelems;
+    status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
 
-    for(int nchunk = 0; nchunk < schunk->nchunks; nchunk++) {
-        printf("\nchunk %d\n", nchunk);
+    for(int nchunk = 0; nchunk < schunk->nchunks / 5; nchunk++) {
         // Get chunk offset
         index_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
-            offset[i] = nchunk_ndim[i] * chunkshape[i];
+            offset[i] = (hsize_t) nchunk_ndim[i] * extchunkshape[i];
         }
 
         // Get chunk
@@ -114,8 +147,9 @@ int comp(blosc2_schunk* schunk)
             nbytes += decompressed;
         }
 
+        blosc_set_timestamp(&t0);
         /* Compress chunk using Caterva + ZLIB + SHUFFLE */
-        compressed = blosc2_compress_ctx(cctx, &chunk, chunksize, cchunk, chunksize);
+        compressed = blosc2_compress_ctx(cctx, chunk, decompressed, cchunk, chunksize);
         if (compressed < 0) {
             printf("Error Caterva compress \n");
             free(shape);
@@ -128,82 +162,109 @@ int comp(blosc2_schunk* schunk)
         } else {
             cat_cbytes += compressed;
         }
-  //      decompressed = blosc2_decompress_ctx(dctx, cchunk, compressed, buffer_cat, chunksize);
 
-        file_cat = H5Fcreate (FILE_CAT, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-        file_h5 = H5Fcreate (FILE_H5, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-        space = H5Screate_simple (2, (const hsize_t *) shape, NULL);
-        dcpl = H5Pcreate (H5P_DATASET_CREATE);
-        status = H5Pset_chunk (dcpl, 2, chunks);
-        dset_cat = H5Dcreate (file_cat, DATASET_CAT, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
-                              H5P_DEFAULT);
-        status = H5Pset_deflate (dcpl, 1);
-        dset_h5 = H5Dcreate (file_h5, DATASET_H5, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
-                             H5P_DEFAULT);
-
-        // Use H5DOwrite to save caterva compressed buffer
-        blosc_set_timestamp(&t0);
-        status = H5DOwrite_chunk (dset_cat, H5P_DEFAULT, flt_msk, (const hsize_t *) offset, compressed,
-                                  cchunk);
+        // Use H5Dwrite to save caterva compressed buffer
+        status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, compressed, cchunk);
+        if (status < 0) {
+            return -1;
+        }
         blosc_set_timestamp(&t1);
         cat_time_w += blosc_elapsed_secs(t0, t1);
-        printf("Caterva write: %f s\n", cat_time_w);
 
+        for (int i = 0; i < ndim; ++i) {
+            start[i] = nchunk_ndim[i] * chunks[i];
+            stride[i] = chunks[i];
+            count[i] = 1;
+            block[i] = chunks[i];
+        }
+        status = H5Sselect_hyperslab(space, H5S_SELECT_SET, start, stride, count, block);
+        if (status < 0) {
+            return -1;
+        }
         // Use H5Dwrite to compress and save buffer using gzip
         blosc_set_timestamp(&t0);
-        status = H5Dwrite (dset_h5, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                           chunk);
+        status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
+                          chunk);
         blosc_set_timestamp(&t1);
         h5_time_w += blosc_elapsed_secs(t0, t1);
-        printf("HDF5 write: %f s\n", h5_time_w);
+        if (status < 0) {
+            return -1;
+        }
+    }
 
-        // Close and release resources.
-        status = H5Pclose (dcpl);
-        status = H5Sclose (space);
-        status = H5Fclose (file_cat);
-        status = H5Fclose (file_h5);
-        status = H5Dclose (dset_cat);
-        status = H5Dclose (dset_h5);
+    printf("Caterva write: %f s\n", cat_time_w * 5 / schunk->nchunks);
+    printf("HDF5 write: %f s\n", h5_time_w * 5 / schunk->nchunks);
 
-        // Open HDF5 dataset
-        file_cat = H5Fopen (FILE_CAT, H5F_ACC_RDONLY, H5P_DEFAULT);
-        dset_cat = H5Dopen (file_cat, DATASET_CAT, H5P_DEFAULT);
-        file_h5 = H5Fopen (FILE_H5, H5F_ACC_RDONLY, H5P_DEFAULT);
-        dset_h5 = H5Dopen (file_h5, DATASET_H5, H5P_DEFAULT);
-        dcpl = H5Dget_create_plist (dset_h5);
+    // Close and release resources.
+    status = H5Pclose (dcpl);
+    status = H5Sclose (space);
+    status = H5Sclose (mem_space);
+    status = H5Fclose (file_cat_w);
+    status = H5Fclose (file_h5_w);
+    status = H5Dclose (dset_cat_w);
+    status = H5Dclose (dset_h5_w);
 
+    // Open HDF5 dataset
+    file_cat_r = H5Fopen (FILE_CAT, H5F_ACC_RDONLY, H5P_DEFAULT);
+    dset_cat_r = H5Dopen (file_cat_r, DATASET_CAT, H5P_DEFAULT);
+    file_h5_r = H5Fopen (FILE_H5, H5F_ACC_RDONLY, H5P_DEFAULT);
+    dset_h5_r = H5Dopen (file_h5_r, DATASET_H5, H5P_DEFAULT);
+    dcpl = H5Dget_create_plist (dset_h5_r);
+    space = H5Screate_simple (ndim, (const hsize_t *) extshape, NULL);
+    mem_space = H5Screate_simple (1, &memsize, NULL);
+    start[0] = 0;
+    stride[0] = chunknelems;
+    count[0] = 1;
+    block[0] = chunknelems;
+    status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
+    hsize_t cbufsize;
+
+    for(int nchunk = 0; nchunk < schunk->nchunks / 5; nchunk++) {
+        // Get chunk offset
+        index_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
+        for (int i = 0; i < ndim; ++i) {
+            offset[i] = (hsize_t) nchunk_ndim[i] * extchunkshape[i];
+        }
+
+        for (int i = 0; i < ndim; ++i) {
+            start[i] = nchunk_ndim[i] * chunks[i];
+            stride[i] = chunks[i];
+            count[i] = 1;
+            block[i] = chunks[i];
+        }
+        status = H5Sselect_hyperslab (space, H5S_SELECT_SET, start, stride, count,
+                                      block);
+        if (status < 0) {
+            return -1;
+        }
         // Read HDF5 buffer
         blosc_set_timestamp(&t0);
-        status = H5Dread (dset_h5, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+        status = H5Dread (dset_h5_r, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                           buffer_h5);
         blosc_set_timestamp(&t1);
         h5_time_r += blosc_elapsed_secs(t0, t1);
-        printf("HDF5 read: %f s\n", h5_time_r);
+        if (status < 0) {
+            return -1;
+        }
 
         // Read caterva compressed buffer
         blosc_set_timestamp(&t0);
-        status = H5DOread_chunk(dset_cat, H5P_DEFAULT, (const hsize_t *) offset, &flt_msk,
-                                cbuffer);
-        blosc_set_timestamp(&t1);
-        cat_time_r += blosc_elapsed_secs(t0, t1);
-        printf("Caterva read: %f s\n\n", cat_time_r);
-
-        // Close and release resources.
-        status = H5Pclose (dcpl);
-        status = H5Dclose (dset_cat);
-        status = H5Fclose (file_cat);
-        status = H5Dclose (dset_h5);
-        status = H5Fclose (file_h5);
-
+        status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, offset, &flt_msk, cbuffer);
+        if (status < 0) {
+            return -1;
+        }
+        H5Dget_chunk_storage_size(dset_cat_r, offset, &cbufsize);
 
         /* Decompress chunk using Caterva + ZLIB + SHUFFLE */
-        decompressed = blosc2_decompress_ctx(dctx, cbuffer, compressed, buffer_cat, chunksize);
-/*
-        printf("cbuffer\n");
-        for (int i = 0; i < 30; ++i) {
-            printf("%u, ", cchunk[i]);
-        }
-*/
+        decompressed = blosc2_decompress_ctx(dctx, cbuffer, (int32_t) cbufsize, buffer_cat, chunksize);
+        blosc_set_timestamp(&t1);
+        cat_time_r += blosc_elapsed_secs(t0, t1);
+        /*
+         printf("cbuffer\n");
+         for (int i = 0; i < 30; ++i) {
+             printf("%u, ", cchunk[i]);
+         }
+ */
         if (decompressed < 0) {
             printf("Error Caterva decompress \n");
             free(shape);
@@ -217,11 +278,23 @@ int comp(blosc2_schunk* schunk)
 
         // Check that every buffer is equal
         for (int k = 0; k < decompressed / schunk->typesize; ++k) {
-            if ((chunk[k] != buffer_cat[k]) || (chunk[k] != buffer_h5[k])) {
-       //         printf("Input not equal to output: %d, %d, %d \n", chunk[k], buffer_cat[k], buffer_h5[k]);
+            if (buffer_h5[k] != buffer_cat[k]) {
+                printf("Input not equal to output: %d, %d \n", buffer_cat[k], buffer_h5[k]);
             }
         }
     }
+
+    printf("Caterva read: %f s\n", cat_time_r * 5 / schunk->nchunks);
+    printf("HDF5 read: %f s\n", h5_time_r * 5 / schunk->nchunks);
+
+    // Close and release resources.
+    status = H5Sclose (space);
+    status = H5Sclose (mem_space);
+    status = H5Pclose (dcpl);
+    status = H5Dclose (dset_cat_r);
+    status = H5Fclose (file_cat_r);
+    status = H5Dclose (dset_h5_r);
+    status = H5Fclose (file_h5_r);
 
     blosc_destroy();
 
@@ -304,14 +377,14 @@ int main() {
     unsigned majnum, minnum, vers;
     if (H5get_libversion(&majnum, &minnum, &vers) >= 0)
         printf("VERSION %d.%d.%d \n", majnum, minnum, vers);
-
+/*
     printf("cyclic \n");
     CATERVA_ERROR(cyclic());
     printf("easy \n");
     CATERVA_ERROR(easy());
-/*    printf("wind1 \n");
+ */   printf("wind1 \n");
     CATERVA_ERROR(wind1());
-/*    printf("air1 \n");
+    printf("air1 \n");
     CATERVA_ERROR(air1());
     printf("solar1 \n");
     CATERVA_ERROR(solar1());

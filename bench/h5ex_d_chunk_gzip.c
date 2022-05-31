@@ -97,13 +97,11 @@ main (void)
         for (int i = 0; i < ndim; ++i) {
             offset[i] = (hsize_t) nchunk_ndim[i] * chunk[i];
         }
-        hsize_t dims_get[2];
-        H5Sget_simple_extent_dims(H5Dget_space(dset_cat_w), dims_get, NULL);
-        printf("offset %llu x %llu, dims %llu x %llu\n", offset[0], offset[1], dims_get[0], dims_get[1]);
+
         // Use H5Dwrite to save caterva compressed buffer
         status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, chunksize * sizeof(int),
                                  &wdata[nchunk * chunksize]);
-/*
+
         start[0] = nchunk_ndim[0] * CHUNK0;
         start[1] = nchunk_ndim[1] * CHUNK1;
         stride[0] = CHUNK0;
@@ -117,7 +115,7 @@ main (void)
         // Use H5Dwrite to compress and save buffer using gzip
         status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                           &wdata[nchunk * chunksize]);
-*/
+
         for (i=0; i<chunksize; i++) {
                 printf(" %d", wdata[nchunk * chunksize + i]);
         }
@@ -162,7 +160,7 @@ main (void)
             printf(" %d", rdata[i]);
         }
         printf("\n");
-/*
+
         start[0] = nchunk_ndim[0] * CHUNK0;
         start[1] = nchunk_ndim[1] * CHUNK1;
         stride[0] = CHUNK0;
@@ -179,7 +177,7 @@ main (void)
         for (i=0; i<chunksize; i++) {
                 printf(" %d", rdata[i]);
         }
-*/
+
     }
 
     // Close and release resources.
