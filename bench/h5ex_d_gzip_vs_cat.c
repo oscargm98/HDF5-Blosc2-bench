@@ -26,6 +26,7 @@ int comp(blosc2_schunk* schunk)
 {
     blosc_init();
 
+    // Parameters definition
     caterva_config_t cfg = CATERVA_CONFIG_DEFAULTS;
     caterva_ctx_t *ctx;
     caterva_ctx_new(&cfg, &ctx);
@@ -90,8 +91,10 @@ int comp(blosc2_schunk* schunk)
     int32_t *buffer_h5 = malloc(chunksize);
 
     blosc_timestamp_t t0, t1;
-    double cat_time_w, cat_time_r, h5_time_w, h5_time_r;
-    cat_time_w = cat_time_r = 0;
+    double cat_time_w = 0;
+    double cat_time_r = 0;
+    double h5_time_w = 0;
+    double h5_time_r = 0;
     int compressed, decompressed;
     int cat_cbytes, nbytes;
     cat_cbytes = nbytes = 0;
@@ -125,7 +128,7 @@ int comp(blosc2_schunk* schunk)
     block[0] = chunknelems;
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
 
-    for(int nchunk = 0; nchunk < schunk->nchunks / 5; nchunk++) {
+    for(int nchunk = 0; nchunk < schunk->nchunks; nchunk++) {
         // Get chunk offset
         index_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
@@ -171,6 +174,7 @@ int comp(blosc2_schunk* schunk)
         blosc_set_timestamp(&t1);
         cat_time_w += blosc_elapsed_secs(t0, t1);
 
+        blosc_set_timestamp(&t0);
         for (int i = 0; i < ndim; ++i) {
             start[i] = nchunk_ndim[i] * chunks[i];
             stride[i] = chunks[i];
@@ -182,7 +186,6 @@ int comp(blosc2_schunk* schunk)
             return -1;
         }
         // Use H5Dwrite to compress and save buffer using gzip
-        blosc_set_timestamp(&t0);
         status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                           chunk);
         blosc_set_timestamp(&t1);
@@ -192,8 +195,9 @@ int comp(blosc2_schunk* schunk)
         }
     }
 
-    printf("Caterva write: %f s\n", cat_time_w * 5 / schunk->nchunks);
-    printf("HDF5 write: %f s\n", h5_time_w * 5 / schunk->nchunks);
+    printf("nchunks: %ld", schunk->nchunks);
+    printf("Caterva write: %f s\n", cat_time_w);
+    printf("HDF5 write: %f s\n", h5_time_w);
 
     // Close and release resources.
     status = H5Pclose (dcpl);
@@ -219,13 +223,14 @@ int comp(blosc2_schunk* schunk)
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
     hsize_t cbufsize;
 
-    for(int nchunk = 0; nchunk < schunk->nchunks / 5; nchunk++) {
+    for(int nchunk = 0; nchunk < schunk->nchunks; nchunk++) {
         // Get chunk offset
         index_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
             offset[i] = (hsize_t) nchunk_ndim[i] * extchunkshape[i];
         }
 
+        blosc_set_timestamp(&t0);
         for (int i = 0; i < ndim; ++i) {
             start[i] = nchunk_ndim[i] * chunks[i];
             stride[i] = chunks[i];
@@ -238,7 +243,6 @@ int comp(blosc2_schunk* schunk)
             return -1;
         }
         // Read HDF5 buffer
-        blosc_set_timestamp(&t0);
         status = H5Dread (dset_h5_r, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                           buffer_h5);
         blosc_set_timestamp(&t1);
@@ -259,12 +263,7 @@ int comp(blosc2_schunk* schunk)
         decompressed = blosc2_decompress_ctx(dctx, cbuffer, (int32_t) cbufsize, buffer_cat, chunksize);
         blosc_set_timestamp(&t1);
         cat_time_r += blosc_elapsed_secs(t0, t1);
-        /*
-         printf("cbuffer\n");
-         for (int i = 0; i < 30; ++i) {
-             printf("%u, ", cchunk[i]);
-         }
- */
+
         if (decompressed < 0) {
             printf("Error Caterva decompress \n");
             free(shape);
@@ -284,8 +283,8 @@ int comp(blosc2_schunk* schunk)
         }
     }
 
-    printf("Caterva read: %f s\n", cat_time_r * 5 / schunk->nchunks);
-    printf("HDF5 read: %f s\n", h5_time_r * 5 / schunk->nchunks);
+    printf("Caterva read: %f s\n", cat_time_r);
+    printf("HDF5 read: %f s\n", h5_time_r);
 
     // Close and release resources.
     status = H5Sclose (space);
@@ -382,15 +381,15 @@ int main() {
     CATERVA_ERROR(cyclic());
     printf("easy \n");
     CATERVA_ERROR(easy());
- */   printf("wind1 \n");
+ *   printf("wind1 \n");
     CATERVA_ERROR(wind1());
-    printf("air1 \n");
+  *  printf("air1 \n");
     CATERVA_ERROR(air1());
-    printf("solar1 \n");
+   * printf("solar1 \n");
     CATERVA_ERROR(solar1());
-    printf("snow1 \n");
+  *  printf("snow1 \n");
     CATERVA_ERROR(snow1());
-    printf("precip1 \n");
+  */  printf("precip1 \n");
     CATERVA_ERROR(precip1());
     /*  printf("precip2 \n");
     CATERVA_ERROR(precip2());
