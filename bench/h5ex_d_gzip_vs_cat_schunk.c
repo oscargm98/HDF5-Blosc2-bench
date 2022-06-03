@@ -75,18 +75,21 @@ int comp(blosc2_schunk* schunk)
     cparams.schunk = schunk;
     blosc2_context *cctx;
     cctx = blosc2_create_cctx(cparams);
+    blosc2_storage storage = {.cparams=&cparams, .contiguous=false, .urlpath = NULL};
+    blosc2_schunk* wschunk = blosc2_schunk_new(&storage);
 
     blosc2_dparams dparams = BLOSC2_DPARAMS_DEFAULTS;
     dparams.nthreads = 6;
     dparams.schunk = schunk;
     blosc2_context *dctx;
     dctx = blosc2_create_dctx(dparams);
+    blosc2_schunk* rschunk;
 
     int32_t chunksize = schunk->chunksize;
     uint8_t *chunk = malloc(chunksize);
     uint8_t *cchunk = malloc(chunksize);
     int32_t *buffer_cat = malloc(chunksize);
-    int32_t *cbuffer = malloc(chunksize);
+    int32_t *cbuffer = malloc(schunk->nbytes);
     int32_t *buffer_h5 = malloc(chunksize);
 
     blosc_timestamp_t t0, t1;
@@ -128,12 +131,6 @@ int comp(blosc2_schunk* schunk)
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
 
     for(int nchunk = 0; nchunk < schunk->nchunks; nchunk++) {
-        // Get chunk offset
-        blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
-        for (int i = 0; i < ndim; ++i) {
-            offset[i] = (hsize_t) nchunk_ndim[i] * extchunkshape[i];
-        }
-
         // Get chunk
         decompressed = blosc2_schunk_decompress_chunk(schunk, nchunk, chunk, (int32_t) chunksize);
         if (decompressed < 0) {
@@ -149,7 +146,7 @@ int comp(blosc2_schunk* schunk)
             nbytes += decompressed;
         }
 
-        /* Compress chunk using Caterva + ZLIB + SHUFFLE */
+        /* Compress chunk using Caterva + ZLIB */
         blosc_set_timestamp(&t0);
         compressed = blosc2_compress_ctx(cctx, chunk, decompressed, cchunk, chunksize);
         if (compressed < 0) {
@@ -164,12 +161,7 @@ int comp(blosc2_schunk* schunk)
         } else {
             cat_cbytes += compressed;
         }
-
-        // Use H5Dwrite to save caterva compressed buffer
-        status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, compressed, cchunk);
-        if (status < 0) {
-            return -1;
-        }
+        blosc2_schunk_append_chunk(wschunk, cchunk, false);
         blosc_set_timestamp(&t1);
         cat_time_w += blosc_elapsed_secs(t0, t1);
 
@@ -193,6 +185,15 @@ int comp(blosc2_schunk* schunk)
             return -1;
         }
     }
+
+    // Use H5Dwrite_chunk to save Caterva compressed superchunk
+    blosc_set_timestamp(&t0);
+    status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, wschunk->cbytes, wschunk->data);
+    if (status < 0) {
+        return -1;
+    }
+    blosc_set_timestamp(&t1);
+    cat_time_w += blosc_elapsed_secs(t0, t1);
 
     printf("nchunks: %ld", schunk->nchunks);
     printf("Caterva write: %f s\n", cat_time_w);
@@ -222,13 +223,18 @@ int comp(blosc2_schunk* schunk)
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
     hsize_t cbufsize;
 
-    for(int nchunk = 0; nchunk < schunk->nchunks; nchunk++) {
-        // Get chunk offset
-        blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
-        for (int i = 0; i < ndim; ++i) {
-            offset[i] = (hsize_t) nchunk_ndim[i] * extchunkshape[i];
-        }
+    // Read Caterva compressed superchunk
+    blosc_set_timestamp(&t0);
+    status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, offset, &flt_msk, cbuffer);
+    if (status < 0) {
+        return -1;
+    }
+    H5Dget_chunk_storage_size(dset_cat_r, offset, &cbufsize);
+    rschunk = blosc2_schunk_from_buffer((uint8_t *) cbuffer, (int64_t) cbufsize, false);
+    blosc_set_timestamp(&t1);
+    cat_time_r += blosc_elapsed_secs(t0, t1);
 
+    for(int nchunk = 0; nchunk < schunk->nchunks; nchunk++) {
         // Read HDF5 buffer
         blosc_set_timestamp(&t0);
         for (int i = 0; i < ndim; ++i) {
@@ -250,16 +256,9 @@ int comp(blosc2_schunk* schunk)
             return -1;
         }
 
-        // Read caterva compressed buffer
+        /* Decompress chunk using Caterva + ZLIB */
         blosc_set_timestamp(&t0);
-        status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, offset, &flt_msk, cbuffer);
-        if (status < 0) {
-            return -1;
-        }
-        H5Dget_chunk_storage_size(dset_cat_r, offset, &cbufsize);
-
-        /* Decompress chunk using Caterva + ZLIB + SHUFFLE */
-        decompressed = blosc2_decompress_ctx(dctx, cbuffer, (int32_t) cbufsize, buffer_cat, chunksize);
+        decompressed = blosc2_schunk_decompress_chunk(rschunk, nchunk, buffer_cat, chunksize);
         blosc_set_timestamp(&t1);
         cat_time_r += blosc_elapsed_secs(t0, t1);
 
@@ -375,20 +374,20 @@ int main() {
     unsigned majnum, minnum, vers;
     if (H5get_libversion(&majnum, &minnum, &vers) >= 0)
         printf("VERSION %d.%d.%d \n", majnum, minnum, vers);
-/*
+
     printf("cyclic \n");
     CATERVA_ERROR(cyclic());
     printf("easy \n");
     CATERVA_ERROR(easy());
- */   printf("wind1 \n");
+ /*   printf("wind1 \n");
     CATERVA_ERROR(wind1());
-    printf("air1 \n");
+  *  printf("air1 \n");
     CATERVA_ERROR(air1());
-    printf("solar1 \n");
+   * printf("solar1 \n");
     CATERVA_ERROR(solar1());
-    printf("snow1 \n");
+  *  printf("snow1 \n");
     CATERVA_ERROR(snow1());
-    printf("precip1 \n");
+  */  printf("precip1 \n");
     CATERVA_ERROR(precip1());
     /*  printf("precip2 \n");
     CATERVA_ERROR(precip2());
