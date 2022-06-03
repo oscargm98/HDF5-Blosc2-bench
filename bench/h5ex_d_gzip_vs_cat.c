@@ -118,6 +118,7 @@ int comp(blosc2_schunk* schunk)
     status = H5Pset_chunk (dcpl, ndim, chunks);
     dset_cat_w = H5Dcreate (file_cat_w, DATASET_CAT, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
                           H5P_DEFAULT);
+    status = H5Pset_shuffle (dcpl);
     status = H5Pset_deflate (dcpl, 1);
     dset_h5_w = H5Dcreate (file_h5_w, DATASET_H5, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
                          H5P_DEFAULT);
