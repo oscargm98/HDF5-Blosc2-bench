@@ -21,35 +21,33 @@
 #define DATASET_CAT         "DSCAT"
 #define DATASET_H5          "DSH5"
 
-int comp(blosc2_schunk* schunk)
+int comp(char* urlpath_input, char* urlpath_cat)
 {
     blosc_init();
 
     // Parameters definition
+    blosc2_schunk *schunk = blosc2_schunk_open(urlpath_input);
     caterva_config_t cfg = CATERVA_CONFIG_DEFAULTS;
     caterva_ctx_t *ctx;
     caterva_ctx_new(&cfg, &ctx);
     caterva_array_t *arr;
     caterva_from_schunk(ctx, schunk, &arr);
 
-    uint8_t ndim;
-    int64_t *shape = malloc(8 * sizeof(int64_t));
-    int64_t *extshape = malloc(8 * sizeof(int64_t));
-    int32_t *chunkmeta = malloc(8 * sizeof(int32_t ));
-    int32_t *blockmeta = malloc(8 * sizeof(int32_t ));
-    int64_t *chunkshape = malloc(8 * sizeof(int64_t ));
+    int8_t ndim;
+    int64_t shape[8];
+    int64_t extshape[8];
+    int32_t chunkmeta[8];
+    int32_t blockmeta[8];
+    int64_t chunkshape[8];
     int64_t *extchunkshape = arr->extchunkshape;
-    int64_t *blockshape = malloc(8 * sizeof(int64_t ));
-    hsize_t *offset = malloc(8 * sizeof(int32_t));
-    int64_t *chunksdim = malloc(8 * sizeof(int64_t ));
-    int64_t *nchunk_ndim = malloc(8 * sizeof(int64_t ));
+    int64_t blockshape[8];
+    hsize_t offset[8];
+    int64_t chunksdim[8];
+    int64_t nchunk_ndim[8];
     uint8_t *smeta;
-    uint32_t smeta_len;
+    int32_t smeta_len;
     if (blosc2_meta_get(schunk, "caterva", &smeta, &smeta_len) < 0) {
         printf("Blosc error");
-        free(shape);
-        free(chunkshape);
-        free(blockshape);
         return -1;
     }
     caterva_deserialize_meta(smeta, smeta_len, &ndim, shape, chunkmeta, blockmeta);
@@ -66,21 +64,20 @@ int comp(blosc2_schunk* schunk)
         chunks[i] = extchunkshape[i];
     }
 
+    blosc2_remove_urlpath(urlpath_cat);
     blosc2_cparams cparams = BLOSC2_CPARAMS_DEFAULTS;
     cparams.compcode = BLOSC_ZLIB;
     cparams.typesize = schunk->typesize;
     cparams.clevel = 1;
     cparams.nthreads = 6;
     cparams.blocksize = schunk->blocksize;
-    cparams.schunk = schunk;
     blosc2_context *cctx;
     cctx = blosc2_create_cctx(cparams);
-    blosc2_storage storage = {.cparams=&cparams, .contiguous=false, .urlpath = NULL};
+    blosc2_storage storage = {.cparams=&cparams, .contiguous=false, .urlpath = urlpath_cat};
     blosc2_schunk* wschunk = blosc2_schunk_new(&storage);
 
     blosc2_dparams dparams = BLOSC2_DPARAMS_DEFAULTS;
     dparams.nthreads = 6;
-    dparams.schunk = schunk;
     blosc2_context *dctx;
     dctx = blosc2_create_dctx(dparams);
     blosc2_schunk* rschunk;
@@ -136,12 +133,11 @@ int comp(blosc2_schunk* schunk)
         decompressed = blosc2_schunk_decompress_chunk(schunk, nchunk, chunk, (int32_t) chunksize);
         if (decompressed < 0) {
             printf("Error reading chunk \n");
-            free(shape);
-            free(chunkshape);
-            free(blockshape);
             free(chunk);
+            free(cchunk);
             free(buffer_cat);
             free(cbuffer);
+            free(buffer_h5);
             return -1;
         } else {
             nbytes += decompressed;
@@ -152,12 +148,11 @@ int comp(blosc2_schunk* schunk)
         compressed = blosc2_compress_ctx(cctx, chunk, decompressed, cchunk, chunksize);
         if (compressed < 0) {
             printf("Error Caterva compress \n");
-            free(shape);
-            free(chunkshape);
-            free(blockshape);
             free(chunk);
-            free(buffer_cat);
             free(cchunk);
+            free(buffer_cat);
+            free(cbuffer);
+            free(buffer_h5);
             return -1;
         } else {
             cat_cbytes += compressed;
@@ -176,6 +171,11 @@ int comp(blosc2_schunk* schunk)
         }
         status = H5Sselect_hyperslab(space, H5S_SELECT_SET, start, stride, count, block);
         if (status < 0) {
+            free(chunk);
+            free(cchunk);
+            free(buffer_cat);
+            free(cbuffer);
+            free(buffer_h5);
             return -1;
         }
         status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
@@ -183,6 +183,11 @@ int comp(blosc2_schunk* schunk)
         blosc_set_timestamp(&t1);
         h5_time_w += blosc_elapsed_secs(t0, t1);
         if (status < 0) {
+            free(chunk);
+            free(cchunk);
+            free(buffer_cat);
+            free(cbuffer);
+            free(buffer_h5);
             return -1;
         }
     }
@@ -191,6 +196,11 @@ int comp(blosc2_schunk* schunk)
     blosc_set_timestamp(&t0);
     status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, wschunk->cbytes, wschunk->data);
     if (status < 0) {
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
         return -1;
     }
     blosc_set_timestamp(&t1);
@@ -228,6 +238,11 @@ int comp(blosc2_schunk* schunk)
     blosc_set_timestamp(&t0);
     status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, offset, &flt_msk, cbuffer);
     if (status < 0) {
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
         return -1;
     }
     H5Dget_chunk_storage_size(dset_cat_r, offset, &cbufsize);
@@ -247,6 +262,11 @@ int comp(blosc2_schunk* schunk)
         status = H5Sselect_hyperslab (space, H5S_SELECT_SET, start, stride, count,
                                       block);
         if (status < 0) {
+            free(chunk);
+            free(cchunk);
+            free(buffer_cat);
+            free(cbuffer);
+            free(buffer_h5);
             return -1;
         }
         status = H5Dread (dset_h5_r, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
@@ -254,6 +274,11 @@ int comp(blosc2_schunk* schunk)
         blosc_set_timestamp(&t1);
         h5_time_r += blosc_elapsed_secs(t0, t1);
         if (status < 0) {
+            free(chunk);
+            free(cchunk);
+            free(buffer_cat);
+            free(cbuffer);
+            free(buffer_h5);
             return -1;
         }
 
@@ -265,12 +290,11 @@ int comp(blosc2_schunk* schunk)
 
         if (decompressed < 0) {
             printf("Error Caterva decompress \n");
-            free(shape);
-            free(chunkshape);
-            free(blockshape);
             free(chunk);
+            free(cchunk);
             free(buffer_cat);
             free(cbuffer);
+            free(buffer_h5);
             return -1;
         }
 
@@ -293,6 +317,13 @@ int comp(blosc2_schunk* schunk)
     status = H5Fclose (file_cat_r);
     status = H5Dclose (dset_h5_r);
     status = H5Fclose (file_h5_r);
+    free(chunk);
+    free(cchunk);
+    free(buffer_cat);
+    free(cbuffer);
+    free(buffer_h5);
+    caterva_free(ctx, &arr);
+    caterva_ctx_free(&ctx);
 
     blosc_destroy();
 
@@ -301,72 +332,52 @@ int comp(blosc2_schunk* schunk)
 
 
 int solar1() {
-    blosc2_schunk *schunk = blosc2_schunk_open("../../bench/solar1.cat");
-
-    int result = comp(schunk);
+    int result = comp("../../bench/solar1.cat", "solar1_cat.b2frame");
     return result;
 }
 
 int air1() {
-    blosc2_schunk *schunk = blosc2_schunk_open("../../bench/air1.cat");
-
-    int result = comp(schunk);
+    int result = comp("../../bench/air1.cat", "air1_cat.b2frame");
     return result;
 }
 
 int snow1() {
-    blosc2_schunk *schunk = blosc2_schunk_open("../../bench/snow1.cat");
-
-    int result = comp(schunk);
+    int result = comp("../../bench/snow1.cat", "snow1_cat.b2frame");
     return result;
 }
 
 int wind1() {
-    blosc2_schunk *schunk = blosc2_schunk_open("../../bench/wind1.cat");
-
-    int result = comp(schunk);
+    int result = comp("../../bench/wind1.cat", "wind1_cat.b2frame");
     return result;
 }
 
 int precip1() {
-    blosc2_schunk *schunk = blosc2_schunk_open("../../bench/precip1.cat");
-
-    int result = comp(schunk);
+    int result = comp("../../bench/precip1.cat", "precip1_cat.b2frame");
     return result;
 }
 
 int precip2() {
-    blosc2_schunk *schunk = blosc2_schunk_open("../../bench/precip2.cat");
-
-    int result = comp(schunk);
+    int result = comp("../../bench/precip2.cat", "precip2_cat.b2frame");
     return result;
 }
 
 int precip3() {
-    blosc2_schunk *schunk = blosc2_schunk_open("../../bench/precip3.cat");
-
-    int result = comp(schunk);
+    int result = comp("../../bench/precip3.cat", "precip3_cat.b2frame");
     return result;
 }
 
 int precip3m() {
-    blosc2_schunk *schunk = blosc2_schunk_open("../../bench/precip-3m.cat");
-
-    int result = comp(schunk);
+    int result = comp("../../bench/precip-3m.cat", "precip3m_cat.b2frame");
     return result;
 }
 
 int easy() {
-    blosc2_schunk *schunk = blosc2_schunk_open("../../bench/easy.caterva");
-
-    int result = comp(schunk);
+    int result = comp("../../bench/easy.caterva", "easy_cat.b2frame");
     return result;
 }
 
 int cyclic() {
-    blosc2_schunk *schunk = blosc2_schunk_open("../../bench/cyclic.caterva");
-
-    int result = comp(schunk);
+    int result = comp("../../bench/cyclic.caterva", "cyclic_cat.b2frame");
     return result;
 }
 
@@ -378,9 +389,9 @@ int main() {
 
     printf("cyclic \n");
     CATERVA_ERROR(cyclic());
-    printf("easy \n");
+ /*   printf("easy \n");
     CATERVA_ERROR(easy());
- /*   printf("wind1 \n");
+    printf("wind1 \n");
     CATERVA_ERROR(wind1());
   *  printf("air1 \n");
     CATERVA_ERROR(air1());
@@ -388,7 +399,7 @@ int main() {
     CATERVA_ERROR(solar1());
   *  printf("snow1 \n");
     CATERVA_ERROR(snow1());
-  */  printf("precip1 \n");
+  *  printf("precip1 \n");
     CATERVA_ERROR(precip1());
     /*  printf("precip2 \n");
     CATERVA_ERROR(precip2());
