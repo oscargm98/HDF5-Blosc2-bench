@@ -26,12 +26,11 @@ int comp(char* urlpath_input, char* urlpath_cat)
     blosc_init();
 
     // Parameters definition
-    blosc2_schunk *schunk = blosc2_schunk_open(urlpath_input);
     caterva_config_t cfg = CATERVA_CONFIG_DEFAULTS;
     caterva_ctx_t *ctx;
     caterva_ctx_new(&cfg, &ctx);
     caterva_array_t *arr;
-    caterva_from_schunk(ctx, schunk, &arr);
+    caterva_open(ctx, urlpath_input, &arr);
 
     int8_t ndim = arr->ndim;
     int64_t *shape = arr->shape;
@@ -54,10 +53,10 @@ int comp(char* urlpath_input, char* urlpath_cat)
 
     blosc2_cparams cparams = BLOSC2_CPARAMS_DEFAULTS;
     cparams.compcode = BLOSC_ZLIB;
-    cparams.typesize = schunk->typesize;
+    cparams.typesize = arr->itemsize;
     cparams.clevel = 1;
     cparams.nthreads = 6;
-    cparams.blocksize = schunk->blocksize;
+    cparams.blocksize = arr->sc->blocksize;
     blosc2_context *cctx;
     cctx = blosc2_create_cctx(cparams);
     blosc2_storage storage = {.cparams=&cparams, .contiguous=false, .urlpath = urlpath_cat};
@@ -69,11 +68,11 @@ int comp(char* urlpath_input, char* urlpath_cat)
     dctx = blosc2_create_dctx(dparams);
     blosc2_schunk* rschunk;
 
-    int32_t chunksize = schunk->chunksize;
+    int32_t chunksize = arr->sc->chunksize;
     uint8_t *chunk = malloc(chunksize);
     uint8_t *cchunk = malloc(chunksize);
     int32_t *buffer_cat = malloc(chunksize);
-    int32_t *cbuffer = malloc(schunk->nbytes);
+    int32_t *cbuffer = malloc(arr->sc->nbytes);
     int32_t *buffer_h5 = malloc(chunksize);
 
     blosc_timestamp_t t0, t1;
@@ -115,9 +114,9 @@ int comp(char* urlpath_input, char* urlpath_cat)
     block[0] = chunknelems;
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
 
-    for(int nchunk = 0; nchunk < schunk->nchunks; nchunk++) {
+    for(int nchunk = 0; nchunk < arr->sc->nchunks; nchunk++) {
         // Get chunk
-        decompressed = blosc2_schunk_decompress_chunk(schunk, nchunk, chunk, (int32_t) chunksize);
+        decompressed = blosc2_schunk_decompress_chunk(arr->sc, nchunk, chunk, (int32_t) chunksize);
         if (decompressed < 0) {
             printf("Error reading chunk \n");
             free(chunk);
@@ -193,7 +192,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
     blosc_set_timestamp(&t1);
     cat_time_w += blosc_elapsed_secs(t0, t1);
 
-    printf("nchunks: %ld", schunk->nchunks);
+    printf("nchunks: %ld", arr->sc->nchunks);
     printf("Caterva write: %f s\n", cat_time_w);
     printf("HDF5 write: %f s\n", h5_time_w);
 
@@ -237,7 +236,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
     blosc_set_timestamp(&t1);
     cat_time_r += blosc_elapsed_secs(t0, t1);
 
-    for(int nchunk = 0; nchunk < schunk->nchunks; nchunk++) {
+    for(int nchunk = 0; nchunk < arr->sc->nchunks; nchunk++) {
         // Read HDF5 buffer
         blosc_set_timestamp(&t0);
         for (int i = 0; i < ndim; ++i) {
@@ -286,7 +285,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
         }
 
         // Check that every buffer is equal
-        for (int k = 0; k < decompressed / schunk->typesize; ++k) {
+        for (int k = 0; k < decompressed / arr->itemsize; ++k) {
             if (buffer_h5[k] != buffer_cat[k]) {
                 printf("Input not equal to output: %d, %d \n", buffer_cat[k], buffer_h5[k]);
             }
@@ -311,6 +310,8 @@ int comp(char* urlpath_input, char* urlpath_cat)
     free(buffer_h5);
     caterva_free(ctx, &arr);
     caterva_ctx_free(&ctx);
+    blosc2_schunk_free(wschunk);
+    blosc2_schunk_free(rschunk);
 
     blosc_destroy();
 

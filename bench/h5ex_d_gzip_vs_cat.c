@@ -26,12 +26,11 @@ int comp(char* urlpath_input)
     blosc_init();
 
     // Parameters definition
-    blosc2_schunk *schunk = blosc2_schunk_open(urlpath_input);
     caterva_config_t cfg = CATERVA_CONFIG_DEFAULTS;
     caterva_ctx_t *ctx;
     caterva_ctx_new(&cfg, &ctx);
     caterva_array_t *arr;
-    caterva_from_schunk(ctx, schunk, &arr);
+    caterva_open(ctx, urlpath_input, &arr);
 
     int8_t ndim = arr->ndim;
     int64_t *shape = arr->shape;
@@ -53,10 +52,10 @@ int comp(char* urlpath_input)
 
     blosc2_cparams cparams = BLOSC2_CPARAMS_DEFAULTS;
     cparams.compcode = BLOSC_ZLIB;
-    cparams.typesize = schunk->typesize;
+    cparams.typesize = arr->itemsize;
     cparams.clevel = 1;
     cparams.nthreads = 6;
-    cparams.blocksize = schunk->blocksize;
+    cparams.blocksize = arr->sc->blocksize;
     blosc2_context *cctx;
     cctx = blosc2_create_cctx(cparams);
 
@@ -65,7 +64,7 @@ int comp(char* urlpath_input)
     blosc2_context *dctx;
     dctx = blosc2_create_dctx(dparams);
 
-    int32_t chunksize = schunk->chunksize;
+    int32_t chunksize = arr->sc->chunksize;
     uint8_t *chunk = malloc(chunksize);
     uint8_t *cchunk = malloc(chunksize);
     int32_t *buffer_cat = malloc(chunksize);
@@ -111,7 +110,7 @@ int comp(char* urlpath_input)
     block[0] = chunknelems;
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
 
-    for(int nchunk = 0; nchunk < schunk->nchunks; nchunk++) {
+    for(int nchunk = 0; nchunk < arr->sc->nchunks; nchunk++) {
         // Get chunk offset
         blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
@@ -119,7 +118,7 @@ int comp(char* urlpath_input)
         }
 
         // Get chunk
-        decompressed = blosc2_schunk_decompress_chunk(schunk, nchunk, chunk, (int32_t) chunksize);
+        decompressed = blosc2_schunk_decompress_chunk(arr->sc, nchunk, chunk, (int32_t) chunksize);
         if (decompressed < 0) {
             printf("Error reading chunk \n");
             free(chunk);
@@ -191,7 +190,7 @@ int comp(char* urlpath_input)
         }
     }
 
-    printf("nchunks: %ld", schunk->nchunks);
+    printf("nchunks: %ld", arr->sc->nchunks);
     printf("Caterva write: %f s\n", cat_time_w);
     printf("HDF5 write: %f s\n", h5_time_w);
 
@@ -219,7 +218,7 @@ int comp(char* urlpath_input)
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
     hsize_t cbufsize;
 
-    for(int nchunk = 0; nchunk < schunk->nchunks; nchunk++) {
+    for(int nchunk = 0; nchunk < arr->sc->nchunks; nchunk++) {
         // Get chunk offset
         blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
@@ -286,7 +285,7 @@ int comp(char* urlpath_input)
         }
 
         // Check that every buffer is equal
-        for (int k = 0; k < decompressed / schunk->typesize; ++k) {
+        for (int k = 0; k < decompressed / arr->itemsize; ++k) {
             if (buffer_h5[k] != buffer_cat[k]) {
                 printf("Input not equal to output: %d, %d \n", buffer_cat[k], buffer_h5[k]);
             }
