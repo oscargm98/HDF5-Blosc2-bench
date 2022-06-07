@@ -33,38 +33,25 @@ int comp(char* urlpath_input, char* urlpath_cat)
     caterva_array_t *arr;
     caterva_from_schunk(ctx, schunk, &arr);
 
-    int8_t ndim;
-    int64_t shape[8];
+    int8_t ndim = arr->ndim;
+    int64_t *shape = arr->shape;
     int64_t extshape[8];
-    int32_t chunkmeta[8];
-    int32_t blockmeta[8];
-    int64_t chunkshape[8];
+    int32_t *chunkshape = arr->chunkshape;
     int64_t *extchunkshape = arr->extchunkshape;
-    int64_t blockshape[8];
     hsize_t offset[8];
     int64_t chunksdim[8];
     int64_t nchunk_ndim[8];
-    uint8_t *smeta;
-    int32_t smeta_len;
-    if (blosc2_meta_get(schunk, "caterva", &smeta, &smeta_len) < 0) {
-        printf("Blosc error");
-        return -1;
-    }
-    caterva_deserialize_meta(smeta, smeta_len, &ndim, shape, chunkmeta, blockmeta);
-    free(smeta);
     hsize_t chunks[8];
     int64_t chunknelems = 1;
     for (int i = 0; i < ndim; ++i) {
         offset[i] = nchunk_ndim[i] = 0;
-        chunkshape[i] = chunkmeta[i];
-        blockshape[i] = blockmeta[i];
         chunksdim[i] = (shape[i] - 1) / chunkshape[i] + 1;
         extshape[i] = extchunkshape[i] * chunksdim[i];
         chunknelems *= extchunkshape[i];
         chunks[i] = extchunkshape[i];
     }
-
     blosc2_remove_urlpath(urlpath_cat);
+
     blosc2_cparams cparams = BLOSC2_CPARAMS_DEFAULTS;
     cparams.compcode = BLOSC_ZLIB;
     cparams.typesize = schunk->typesize;
@@ -108,7 +95,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
     herr_t          status;
     unsigned        flt_msk = 0;
 
-    // Create HDF5 dataset
+    // Create HDF5 datasets
     file_cat_w = H5Fcreate (FILE_CAT, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     file_h5_w = H5Fcreate (FILE_H5, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     space = H5Screate_simple (ndim, (const hsize_t *) extshape, NULL);
@@ -143,7 +130,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
             nbytes += decompressed;
         }
 
-        /* Compress chunk using Caterva + ZLIB */
+        // Compress chunk using Blosc + ZLIB + SHUFFLE
         blosc_set_timestamp(&t0);
         compressed = blosc2_compress_ctx(cctx, chunk, decompressed, cchunk, chunksize);
         if (compressed < 0) {
@@ -192,7 +179,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
         }
     }
 
-    // Use H5Dwrite_chunk to save Caterva compressed superchunk
+    // Use H5Dwrite_chunk to save Blosc compressed superchunk
     blosc_set_timestamp(&t0);
     status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, wschunk->cbytes, wschunk->data);
     if (status < 0) {
@@ -219,7 +206,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
     status = H5Dclose (dset_cat_w);
     status = H5Dclose (dset_h5_w);
 
-    // Open HDF5 dataset
+    // Open HDF5 datasets
     file_cat_r = H5Fopen (FILE_CAT, H5F_ACC_RDONLY, H5P_DEFAULT);
     dset_cat_r = H5Dopen (file_cat_r, DATASET_CAT, H5P_DEFAULT);
     file_h5_r = H5Fopen (FILE_H5, H5F_ACC_RDONLY, H5P_DEFAULT);
@@ -234,7 +221,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
     hsize_t cbufsize;
 
-    // Read Caterva compressed superchunk
+    // Read Blosc compressed superchunk
     blosc_set_timestamp(&t0);
     status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, offset, &flt_msk, cbuffer);
     if (status < 0) {
@@ -282,7 +269,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
             return -1;
         }
 
-        /* Decompress chunk using Caterva + ZLIB */
+        // Decompress chunk using Blosc + ZLIB + SHUFFLE
         blosc_set_timestamp(&t0);
         decompressed = blosc2_schunk_decompress_chunk(rschunk, nchunk, buffer_cat, chunksize);
         blosc_set_timestamp(&t1);
