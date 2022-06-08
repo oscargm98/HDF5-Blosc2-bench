@@ -59,7 +59,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
     cparams.blocksize = arr->sc->blocksize;
     blosc2_context *cctx;
     cctx = blosc2_create_cctx(cparams);
-    blosc2_storage storage = {.cparams=&cparams, .contiguous=false, .urlpath = urlpath_cat};
+    blosc2_storage storage = {.cparams=&cparams, .contiguous=true, .urlpath = NULL};
     blosc2_schunk* wschunk = blosc2_schunk_new(&storage);
 
     blosc2_dparams dparams = BLOSC2_DPARAMS_DEFAULTS;
@@ -72,7 +72,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
     uint8_t *chunk = malloc(chunksize);
     uint8_t *cchunk = malloc(chunksize);
     int32_t *buffer_cat = malloc(chunksize);
-    int32_t *cbuffer = malloc(arr->sc->nbytes);
+    uint8_t *cbuffer = malloc(arr->sc->nbytes);
     int32_t *buffer_h5 = malloc(chunksize);
 
     blosc_timestamp_t t0, t1;
@@ -95,6 +95,14 @@ int comp(char* urlpath_input, char* urlpath_cat)
     unsigned        flt_msk = 0;
 
     // Create HDF5 datasets
+    hid_t type_h5;
+    switch (arr->itemsize) {
+        case 4:
+            type_h5 = H5T_STD_I32LE;
+            break;
+        case 8:
+            type_h5 = H5T_STD_I64LE;
+    }
     file_cat_w = H5Fcreate (FILE_CAT, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     file_h5_w = H5Fcreate (FILE_H5, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     space = H5Screate_simple (ndim, (const hsize_t *) extshape, NULL);
@@ -102,11 +110,11 @@ int comp(char* urlpath_input, char* urlpath_cat)
     mem_space = H5Screate_simple (1, &memsize, NULL);
     dcpl = H5Pcreate (H5P_DATASET_CREATE);
     status = H5Pset_chunk (dcpl, ndim, chunks);
-    dset_cat_w = H5Dcreate (file_cat_w, DATASET_CAT, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
+    dset_cat_w = H5Dcreate (file_cat_w, DATASET_CAT, type_h5, space, H5P_DEFAULT, dcpl,
                           H5P_DEFAULT);
     status = H5Pset_shuffle (dcpl);
     status = H5Pset_deflate (dcpl, 1);
-    dset_h5_w = H5Dcreate (file_h5_w, DATASET_H5, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
+    dset_h5_w = H5Dcreate (file_h5_w, DATASET_H5, type_h5, space, H5P_DEFAULT, dcpl,
                          H5P_DEFAULT);
     start[0] = 0;
     stride[0] = chunknelems;
@@ -143,7 +151,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
         } else {
             cat_cbytes += compressed;
         }
-        blosc2_schunk_append_chunk(wschunk, cchunk, false);
+        blosc2_schunk_append_chunk(wschunk, cchunk, true);
         blosc_set_timestamp(&t1);
         cat_time_w += blosc_elapsed_secs(t0, t1);
 
@@ -178,9 +186,14 @@ int comp(char* urlpath_input, char* urlpath_cat)
         }
     }
 
-    // Use H5Dwrite_chunk to save Blosc compressed superchunk
+    // Convert Blosc superchunk to compressed frame
     blosc_set_timestamp(&t0);
-    status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, wschunk->cbytes, wschunk->data);
+    uint8_t *cframe = malloc(wschunk->nbytes);
+    bool needs_free;
+    int64_t frame_len = blosc2_schunk_to_buffer(wschunk, &cframe, &needs_free);
+
+    // Use H5Dwrite_chunk to save Blosc compressed frame
+    status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, frame_len, cframe);
     if (status < 0) {
         free(chunk);
         free(cchunk);
@@ -218,9 +231,9 @@ int comp(char* urlpath_input, char* urlpath_cat)
     count[0] = 1;
     block[0] = chunknelems;
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
-    hsize_t cbufsize;
+    int64_t cbufsize;
 
-    // Read Blosc compressed superchunk
+    // Read Blosc compressed frame
     blosc_set_timestamp(&t0);
     status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, offset, &flt_msk, cbuffer);
     if (status < 0) {
@@ -231,8 +244,24 @@ int comp(char* urlpath_input, char* urlpath_cat)
         free(buffer_h5);
         return -1;
     }
-    H5Dget_chunk_storage_size(dset_cat_r, offset, &cbufsize);
+
+    // Get frame len
+    uint8_t aux_[8];
+    for (int i = 0; i < 8; ++i) {
+        aux_[i] = cbuffer[23 - i];
+    }
+    memcpy(&cbufsize, aux_, 8);
+
+    // Get compressed superchunk
     rschunk = blosc2_schunk_from_buffer((uint8_t *) cbuffer, (int64_t) cbufsize, false);
+    if (rschunk == NULL) {
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
+        return -1;
+    }
     blosc_set_timestamp(&t1);
     cat_time_r += blosc_elapsed_secs(t0, t1);
 
@@ -312,6 +341,9 @@ int comp(char* urlpath_input, char* urlpath_cat)
     caterva_ctx_free(&ctx);
     blosc2_schunk_free(wschunk);
     blosc2_schunk_free(rschunk);
+    if (needs_free) {
+        free(cframe);
+    }
 
     blosc_destroy();
 

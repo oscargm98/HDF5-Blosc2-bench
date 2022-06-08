@@ -91,6 +91,14 @@ int comp(char* urlpath_input)
     unsigned        flt_msk = 0;
 
     // Create HDF5 datasets
+    hid_t type_h5;
+    switch (arr->itemsize) {
+        case 4:
+            type_h5 = H5T_STD_I32LE;
+            break;
+        case 8:
+            type_h5 = H5T_STD_I64LE;
+    }
     file_cat_w = H5Fcreate (FILE_CAT, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     file_h5_w = H5Fcreate (FILE_H5, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     space = H5Screate_simple (ndim, (const hsize_t *) extshape, NULL);
@@ -98,11 +106,11 @@ int comp(char* urlpath_input)
     mem_space = H5Screate_simple (1, &memsize, NULL);
     dcpl = H5Pcreate (H5P_DATASET_CREATE);
     status = H5Pset_chunk (dcpl, ndim, chunks);
-    dset_cat_w = H5Dcreate (file_cat_w, DATASET_CAT, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
+    dset_cat_w = H5Dcreate (file_cat_w, DATASET_CAT, type_h5, space, H5P_DEFAULT, dcpl,
                           H5P_DEFAULT);
     status = H5Pset_shuffle (dcpl);
     status = H5Pset_deflate (dcpl, 1);
-    dset_h5_w = H5Dcreate (file_h5_w, DATASET_H5, H5T_STD_I32LE, space, H5P_DEFAULT, dcpl,
+    dset_h5_w = H5Dcreate (file_h5_w, DATASET_H5, type_h5, space, H5P_DEFAULT, dcpl,
                          H5P_DEFAULT);
     start[0] = 0;
     stride[0] = chunknelems;
@@ -267,9 +275,9 @@ int comp(char* urlpath_input)
             free(buffer_h5);
             return -1;
         }
-        H5Dget_chunk_storage_size(dset_cat_r, offset, &cbufsize);
 
         // Decompress chunk using Blosc + ZLIB + SHUFFLE
+        cbufsize = cbuffer[3];
         decompressed = blosc2_decompress_ctx(dctx, cbuffer, (int32_t) cbufsize, buffer_cat, chunksize);
         blosc_set_timestamp(&t1);
         cat_time_r += blosc_elapsed_secs(t0, t1);
