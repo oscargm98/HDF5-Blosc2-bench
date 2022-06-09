@@ -295,7 +295,7 @@ int comp(char* urlpath_input)
         // Check that every buffer is equal
         for (int k = 0; k < decompressed / arr->itemsize; ++k) {
             if (buffer_h5[k] != buffer_cat[k]) {
-                printf("Input not equal to output: %d, %d \n", buffer_cat[k], buffer_h5[k]);
+                printf("HDF5 output not equal to Blosc output: %d, %d \n", buffer_h5[k], buffer_cat[k]);
             }
         }
     }

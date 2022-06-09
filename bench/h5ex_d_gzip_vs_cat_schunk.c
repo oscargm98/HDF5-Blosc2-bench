@@ -21,7 +21,7 @@
 #define DATASET_CAT         "DSCAT"
 #define DATASET_H5          "DSH5"
 
-int comp(char* urlpath_input, char* urlpath_cat)
+int comp(char* urlpath_input)
 {
     blosc_init();
 
@@ -49,7 +49,6 @@ int comp(char* urlpath_input, char* urlpath_cat)
         chunknelems *= extchunkshape[i];
         chunks[i] = extchunkshape[i];
     }
-    blosc2_remove_urlpath(urlpath_cat);
 
     blosc2_cparams cparams = BLOSC2_CPARAMS_DEFAULTS;
     cparams.compcode = BLOSC_ZLIB;
@@ -59,7 +58,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
     cparams.blocksize = arr->sc->blocksize;
     blosc2_context *cctx;
     cctx = blosc2_create_cctx(cparams);
-    blosc2_storage storage = {.cparams=&cparams, .contiguous=true, .urlpath = NULL};
+    blosc2_storage storage = {.cparams=&cparams, .contiguous=false, .urlpath = NULL};
     blosc2_schunk* wschunk = blosc2_schunk_new(&storage);
 
     blosc2_dparams dparams = BLOSC2_DPARAMS_DEFAULTS;
@@ -316,7 +315,7 @@ int comp(char* urlpath_input, char* urlpath_cat)
         // Check that every buffer is equal
         for (int k = 0; k < decompressed / arr->itemsize; ++k) {
             if (buffer_h5[k] != buffer_cat[k]) {
-                printf("Input not equal to output: %d, %d \n", buffer_cat[k], buffer_h5[k]);
+                printf("HDF5 output not equal to Blosc output: %d, %d \n", buffer_h5[k], buffer_cat[k]);
             }
         }
     }
@@ -352,52 +351,52 @@ int comp(char* urlpath_input, char* urlpath_cat)
 
 
 int solar1() {
-    int result = comp("../../bench/solar1.cat", "solar1_cat.b2frame");
+    int result = comp("../../bench/solar1.cat");
     return result;
 }
 
 int air1() {
-    int result = comp("../../bench/air1.cat", "air1_cat.b2frame");
+    int result = comp("../../bench/air1.cat");
     return result;
 }
 
 int snow1() {
-    int result = comp("../../bench/snow1.cat", "snow1_cat.b2frame");
+    int result = comp("../../bench/snow1.cat");
     return result;
 }
 
 int wind1() {
-    int result = comp("../../bench/wind1.cat", "wind1_cat.b2frame");
+    int result = comp("../../bench/wind1.cat");
     return result;
 }
 
 int precip1() {
-    int result = comp("../../bench/precip1.cat", "precip1_cat.b2frame");
+    int result = comp("../../bench/precip1.cat");
     return result;
 }
 
 int precip2() {
-    int result = comp("../../bench/precip2.cat", "precip2_cat.b2frame");
+    int result = comp("../../bench/precip2.cat");
     return result;
 }
 
 int precip3() {
-    int result = comp("../../bench/precip3.cat", "precip3_cat.b2frame");
+    int result = comp("../../bench/precip3.cat");
     return result;
 }
 
 int precip3m() {
-    int result = comp("../../bench/precip-3m.cat", "precip3m_cat.b2frame");
+    int result = comp("../../bench/precip-3m.cat");
     return result;
 }
 
 int easy() {
-    int result = comp("../../bench/easy.caterva", "easy_cat.b2frame");
+    int result = comp("../../bench/easy.caterva");
     return result;
 }
 
 int cyclic() {
-    int result = comp("../../bench/cyclic.caterva", "cyclic_cat.b2frame");
+    int result = comp("../../bench/cyclic.caterva");
     return result;
 }
 
