@@ -198,7 +198,7 @@ int comp(char* urlpath_input)
         }
     }
 
-    printf("nchunks: %ld", arr->sc->nchunks);
+    printf("nchunks: %ld\n", arr->sc->nchunks);
     printf("Caterva write: %f s\n", cat_time_w);
     printf("HDF5 write: %f s\n", h5_time_w);
 
@@ -379,7 +379,7 @@ int main() {
 
     unsigned majnum, minnum, vers;
     if (H5get_libversion(&majnum, &minnum, &vers) >= 0)
-        printf("VERSION %d.%d.%d \n", majnum, minnum, vers);
+        printf("HDF5 working with version %d.%d.%d \n", majnum, minnum, vers);
 /*
     printf("cyclic \n");
     CATERVA_ERROR(cyclic());

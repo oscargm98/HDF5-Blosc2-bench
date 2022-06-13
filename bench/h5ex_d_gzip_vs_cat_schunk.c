@@ -205,7 +205,7 @@ int comp(char* urlpath_input)
     blosc_set_timestamp(&t1);
     cat_time_w += blosc_elapsed_secs(t0, t1);
 
-    printf("nchunks: %ld", arr->sc->nchunks);
+    printf("nchunks: %ld\n", arr->sc->nchunks);
     printf("Caterva write: %f s\n", cat_time_w);
     printf("HDF5 write: %f s\n", h5_time_w);
 
@@ -407,7 +407,7 @@ int main() {
 
     unsigned majnum, minnum, vers;
     if (H5get_libversion(&majnum, &minnum, &vers) >= 0)
-        printf("VERSION %d.%d.%d \n", majnum, minnum, vers);
+        printf("HDF5 working with version %d.%d.%d \n", majnum, minnum, vers);
 /*
     printf("cyclic \n");
     CATERVA_ERROR(cyclic());

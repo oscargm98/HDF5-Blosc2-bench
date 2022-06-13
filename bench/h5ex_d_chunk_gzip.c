@@ -38,13 +38,14 @@ main (void)
             count[2],
             block[2];
     int             wdata[DIM0 * DIM1],          /* Write buffer */
-    rdata[CHUNK0 * CHUNK1];          /* Read buffer */
+    rdata1[CHUNK0 * CHUNK1],          /* Read buffer */
+    rdata2[CHUNK0 * CHUNK1];          /* Read buffer */
     hsize_t         i, j;
 
     uint8_t ndim = 2;
-    hsize_t *offset = malloc(8 * sizeof(int32_t));
-    int64_t *chunksdim = malloc(8 * sizeof(int64_t ));
-    int64_t *nchunk_ndim = malloc(8 * sizeof(int64_t ));
+    hsize_t offset[8];
+    int64_t chunksdim[8];
+    int64_t nchunk_ndim[8];
     for ( i = 0; i < ndim; ++i) {
         chunksdim[i] = (dims[i] - 1) / chunk[i] + 1;
     }
@@ -144,7 +145,6 @@ main (void)
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
 
     for(int nchunk = 0; nchunk < 64; nchunk++) {
-        printf("\nchunk %d\n", nchunk);
         // Get chunk offset
         blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
@@ -153,11 +153,7 @@ main (void)
 
         // Read caterva compressed buffer
         status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, (const hsize_t *) offset, &flt_msk,
-                               rdata);
-        for (i=0; i<chunksize; i++) {
-            printf(" %d", rdata[i]);
-        }
-        printf("\n");
+                               rdata1);
 
         start[0] = nchunk_ndim[0] * CHUNK0;
         start[1] = nchunk_ndim[1] * CHUNK1;
@@ -171,9 +167,11 @@ main (void)
                                       block);
         // Read HDF5 buffer
         status = H5Dread (dset_h5_r, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
-                          rdata);
+                          rdata2);
         for (i=0; i<chunksize; i++) {
-                printf(" %d", rdata[i]);
+            if (rdata1[i] != rdata2[i]) {
+                printf("Reads not equal for chunk %d item %llu: %d, %d", nchunk, i, rdata1[i], rdata2[i]);
+            }
         }
 
     }
