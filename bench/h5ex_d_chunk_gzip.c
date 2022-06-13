@@ -11,9 +11,7 @@
  ************************************************************/
 
 #include "hdf5.h"
-#include "H5Dpublic.h"
 #include "caterva.h"
-#include "caterva_utils.h"
 #include "blosc2.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -93,7 +91,7 @@ main (void)
     for(int nchunk = 0; nchunk < 64; nchunk++) {
         printf("\nchunk %d\n", nchunk);
         // Get chunk offset
-        index_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
+        blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
             offset[i] = (hsize_t) nchunk_ndim[i] * chunk[i];
         }
@@ -148,7 +146,7 @@ main (void)
     for(int nchunk = 0; nchunk < 64; nchunk++) {
         printf("\nchunk %d\n", nchunk);
         // Get chunk offset
-        index_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
+        blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
             offset[i] = nchunk_ndim[i] * chunk[i];
         }
