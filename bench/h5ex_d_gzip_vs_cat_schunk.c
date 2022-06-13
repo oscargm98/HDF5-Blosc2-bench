@@ -156,6 +156,7 @@ int comp(char* urlpath_input)
 
         // Use H5Dwrite to compress and save buffer using gzip
         blosc_set_timestamp(&t0);
+        blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
             start[i] = nchunk_ndim[i] * chunks[i];
             stride[i] = chunks[i];
@@ -209,13 +210,13 @@ int comp(char* urlpath_input)
     printf("HDF5 write: %f s\n", h5_time_w);
 
     // Close and release resources.
-    status = H5Pclose (dcpl);
-    status = H5Sclose (space);
-    status = H5Sclose (mem_space);
-    status = H5Fclose (file_cat_w);
-    status = H5Fclose (file_h5_w);
-    status = H5Dclose (dset_cat_w);
-    status = H5Dclose (dset_h5_w);
+    H5Pclose (dcpl);
+    H5Sclose (space);
+    H5Sclose (mem_space);
+    H5Fclose (file_cat_w);
+    H5Fclose (file_h5_w);
+    H5Dclose (dset_cat_w);
+    H5Dclose (dset_h5_w);
 
     // Open HDF5 datasets
     file_cat_r = H5Fopen (FILE_CAT, H5F_ACC_RDONLY, H5P_DEFAULT);
@@ -267,6 +268,7 @@ int comp(char* urlpath_input)
     for(int nchunk = 0; nchunk < arr->sc->nchunks; nchunk++) {
         // Read HDF5 buffer
         blosc_set_timestamp(&t0);
+        blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
             start[i] = nchunk_ndim[i] * chunks[i];
             stride[i] = chunks[i];
@@ -324,18 +326,19 @@ int comp(char* urlpath_input)
     printf("HDF5 read: %f s\n", h5_time_r);
 
     // Close and release resources.
-    status = H5Sclose (space);
-    status = H5Sclose (mem_space);
-    status = H5Pclose (dcpl);
-    status = H5Dclose (dset_cat_r);
-    status = H5Fclose (file_cat_r);
-    status = H5Dclose (dset_h5_r);
-    status = H5Fclose (file_h5_r);
+    H5Sclose (space);
+    H5Sclose (mem_space);
+    H5Pclose (dcpl);
+    H5Dclose (dset_cat_r);
+    H5Fclose (file_cat_r);
+    H5Dclose (dset_h5_r);
+    H5Fclose (file_h5_r);
     free(chunk);
     free(cchunk);
     free(buffer_cat);
     free(cbuffer);
     free(buffer_h5);
+    blosc2_free_ctx(dctx);
     caterva_free(ctx, &arr);
     caterva_ctx_free(&ctx);
     blosc2_schunk_free(wschunk);
@@ -405,22 +408,22 @@ int main() {
     unsigned majnum, minnum, vers;
     if (H5get_libversion(&majnum, &minnum, &vers) >= 0)
         printf("VERSION %d.%d.%d \n", majnum, minnum, vers);
-
+/*
     printf("cyclic \n");
     CATERVA_ERROR(cyclic());
- /*   printf("easy \n");
+    printf("easy \n");
     CATERVA_ERROR(easy());
-    printf("wind1 \n");
+ */   printf("wind1 \n");
     CATERVA_ERROR(wind1());
-  *  printf("air1 \n");
+    printf("air1 \n");
     CATERVA_ERROR(air1());
-   * printf("solar1 \n");
+    printf("solar1 \n");
     CATERVA_ERROR(solar1());
-  *  printf("snow1 \n");
+    printf("snow1 \n");
     CATERVA_ERROR(snow1());
-  *  printf("precip1 \n");
+    printf("precip1 \n");
     CATERVA_ERROR(precip1());
-    /*  printf("precip2 \n");
+  /*  printf("precip2 \n");
     CATERVA_ERROR(precip2());
     printf("precip3 \n");
     CATERVA_ERROR(precip3());

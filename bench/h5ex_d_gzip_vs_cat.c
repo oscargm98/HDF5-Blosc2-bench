@@ -203,13 +203,13 @@ int comp(char* urlpath_input)
     printf("HDF5 write: %f s\n", h5_time_w);
 
     // Close and release resources.
-    status = H5Pclose (dcpl);
-    status = H5Sclose (space);
-    status = H5Sclose (mem_space);
-    status = H5Fclose (file_cat_w);
-    status = H5Fclose (file_h5_w);
-    status = H5Dclose (dset_cat_w);
-    status = H5Dclose (dset_h5_w);
+    H5Pclose (dcpl);
+    H5Sclose (space);
+    H5Sclose (mem_space);
+    H5Fclose (file_cat_w);
+    H5Fclose (file_h5_w);
+    H5Dclose (dset_cat_w);
+    H5Dclose (dset_h5_w);
 
     // Open HDF5 datasets
     file_cat_r = H5Fopen (FILE_CAT, H5F_ACC_RDONLY, H5P_DEFAULT);
@@ -304,13 +304,13 @@ int comp(char* urlpath_input)
     printf("HDF5 read: %f s\n", h5_time_r);
 
     // Close and release resources.
-    status = H5Sclose (space);
-    status = H5Sclose (mem_space);
-    status = H5Pclose (dcpl);
-    status = H5Dclose (dset_cat_r);
-    status = H5Fclose (file_cat_r);
-    status = H5Dclose (dset_h5_r);
-    status = H5Fclose (file_h5_r);
+    H5Sclose (space);
+    H5Sclose (mem_space);
+    H5Pclose (dcpl);
+    H5Dclose (dset_cat_r);
+    H5Fclose (file_cat_r);
+    H5Dclose (dset_h5_r);
+    H5Fclose (file_h5_r);
     free(chunk);
     free(cchunk);
     free(buffer_cat);
@@ -380,12 +380,12 @@ int main() {
     unsigned majnum, minnum, vers;
     if (H5get_libversion(&majnum, &minnum, &vers) >= 0)
         printf("VERSION %d.%d.%d \n", majnum, minnum, vers);
-
+/*
     printf("cyclic \n");
     CATERVA_ERROR(cyclic());
- /*   printf("easy \n");
+    printf("easy \n");
     CATERVA_ERROR(easy());
- *   printf("wind1 \n");
+ */   printf("wind1 \n");
     CATERVA_ERROR(wind1());
     printf("air1 \n");
     CATERVA_ERROR(air1());
