@@ -1,12 +1,10 @@
 /************************************************************
 
-  This example shows how to read and write data to a dataset
-  using gzip compression (also called zlib or deflate).  The
-  program first checks if gzip compression is available,
-  then if it is it writes integers to a dataset using gzip,
-  then closes the file.  Next, it reopens the file, reads
-  back the data, and outputs the type of compression and the
-  maximum value in the dataset to the screen.
+  This benchmark compares times gotten during reading and
+  writing data to a dataset process using:
+  - HDF5 with gzip + shuffle compression.
+  - Blosc2 with zlib + shuffle compression
+  processing the whole superchunk at once.
 
  ************************************************************/
 
