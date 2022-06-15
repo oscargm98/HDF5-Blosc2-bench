@@ -262,6 +262,7 @@ int comp(char* urlpath_input)
     }
     blosc_set_timestamp(&t1);
     cat_time_r += blosc_elapsed_secs(t0, t1);
+    bool needs_free2;
 
     for(int nchunk = 0; nchunk < arr->sc->nchunks; nchunk++) {
         // Read HDF5 buffer
@@ -298,7 +299,9 @@ int comp(char* urlpath_input)
 
         // Decompress chunk using Blosc + ZLIB + SHUFFLE
         blosc_set_timestamp(&t0);
-        decompressed = blosc2_schunk_decompress_chunk(rschunk, nchunk, buffer_cat, chunksize);
+  //      decompressed = blosc2_schunk_decompress_chunk(rschunk, nchunk, buffer_cat, chunksize);
+        compressed = blosc2_schunk_get_lazychunk(rschunk, nchunk, &cchunk, &needs_free2);
+        decompressed = blosc2_decompress_ctx(dctx, cchunk, compressed, buffer_cat, chunksize);
         blosc_set_timestamp(&t1);
         cat_time_r += blosc_elapsed_secs(t0, t1);
 
@@ -332,7 +335,9 @@ int comp(char* urlpath_input)
     H5Dclose (dset_h5_r);
     H5Fclose (file_h5_r);
     free(chunk);
-    free(cchunk);
+    if (needs_free2){
+        free(cchunk);
+    }
     free(buffer_cat);
     free(cbuffer);
     free(buffer_h5);
@@ -406,12 +411,12 @@ int main() {
     unsigned majnum, minnum, vers;
     if (H5get_libversion(&majnum, &minnum, &vers) >= 0)
         printf("HDF5 working with version %d.%d.%d \n", majnum, minnum, vers);
-/*
+
     printf("cyclic \n");
     CATERVA_ERROR(cyclic());
     printf("easy \n");
     CATERVA_ERROR(easy());
- */   printf("wind1 \n");
+ /*   printf("wind1 \n");
     CATERVA_ERROR(wind1());
     printf("air1 \n");
     CATERVA_ERROR(air1());
