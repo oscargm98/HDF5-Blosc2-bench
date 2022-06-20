@@ -58,7 +58,6 @@ int comp(char* urlpath_input)
     cctx = blosc2_create_cctx(cparams);
     blosc2_storage storage = {.cparams=&cparams, .contiguous=false, .urlpath = NULL};
     blosc2_schunk* wschunk = blosc2_schunk_new(&storage);
-    blosc2_schunk* rschunk;
 
     int32_t chunksize = arr->sc->chunksize;
     uint8_t *chunk = malloc(chunksize);
@@ -211,15 +210,6 @@ int comp(char* urlpath_input)
     uint8_t *cframe = malloc(wschunk->nbytes);
     bool needs_free;
     int64_t frame_len = blosc2_schunk_to_buffer(wschunk, &cframe, &needs_free);
-    if (frame_len < 0) {
-        printf("Error getting schunk \n");
-        free(chunk);
-        free(cchunk);
-        free(buffer_cat);
-        free(cbuffer);
-        free(buffer_h5);
-        return -1;
-    }
 
     // Use H5Dwrite_chunk to save Blosc compressed frame
     status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, frame_len, cframe);
@@ -280,27 +270,13 @@ int comp(char* urlpath_input)
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
     int64_t cbufsize;
 
-    // Read Blosc compressed frame
-    blosc_set_timestamp(&t0);
-    status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, offset, &flt_msk, cbuffer);
-    if (status < 0) {
-        free(chunk);
-        free(cchunk);
-        free(buffer_cat);
-        free(cbuffer);
-        free(buffer_h5);
-        return -1;
-    }
-
-    // Get frame len
-    uint8_t aux_[8];
-    for (int i = 0; i < 8; ++i) {
-        aux_[i] = cbuffer[23 - i];
-    }
-    memcpy(&cbufsize, aux_, 8);
-
     // Get compressed superchunk
-    rschunk = blosc2_schunk_from_buffer((uint8_t *) cbuffer, (int64_t) cbufsize, false);
+    blosc_set_timestamp(&t0);
+    haddr_t address = 0;
+    hid_t chunk_space = H5Dget_space(dset_cat_r);
+    hsize_t cframe_size;
+    H5Dget_chunk_info(dset_cat_r, chunk_space, 0, NULL, &flt_msk, &address, &cframe_size);
+    blosc2_schunk* rschunk = blosc2_schunk_open_offset(FILE_CAT, (int64_t) address);
     if (rschunk == NULL) {
         free(chunk);
         free(cchunk);
@@ -377,7 +353,7 @@ int comp(char* urlpath_input)
         blosc_set_timestamp(&t1);
         cat_time_r += blosc_elapsed_secs(t0, t1);
 
-        // Check that every buffer is equal
+        // Check that both buffers are equal
         for (int k = 0; k < decompressed / arr->itemsize; ++k) {
             if (buffer_h5[k] != buffer_cat[k]) {
                 printf("HDF5 output not equal to Blosc output: %d, %d \n", buffer_h5[k], buffer_cat[k]);
@@ -477,9 +453,9 @@ int main() {
 
     printf("cyclic \n");
     CATERVA_ERROR(cyclic());
- /*   printf("easy \n");
+/*    printf("easy \n");
     CATERVA_ERROR(easy());
- /*   printf("wind1 \n");
+    printf("wind1 \n");
     CATERVA_ERROR(wind1());
     printf("air1 \n");
     CATERVA_ERROR(air1());
