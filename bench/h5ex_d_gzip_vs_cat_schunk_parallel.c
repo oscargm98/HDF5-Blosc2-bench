@@ -236,7 +236,11 @@ int comp(char* urlpath_input)
     H5Fclose (file_h5_w);
     H5Dclose (dset_cat_w);
     H5Dclose (dset_h5_w);
-
+/*
+    char command[50];
+    strcpy(command, "vmtouch -e h5ex_cat.h5 h5ex_h5.h5" );
+    system(command);
+*/
     // Open HDF5 datasets
     file_cat_r = H5Fopen (FILE_CAT, H5F_ACC_RDONLY, H5P_DEFAULT);
     dset_cat_r = H5Dopen (file_cat_r, DATASET_CAT, H5P_DEFAULT);
@@ -450,12 +454,12 @@ int main() {
     unsigned majnum, minnum, vers;
     if (H5get_libversion(&majnum, &minnum, &vers) >= 0)
         printf("HDF5 working with version %d.%d.%d \n", majnum, minnum, vers);
-
+/*
     printf("cyclic \n");
     CATERVA_ERROR(cyclic());
-/*    printf("easy \n");
+ *   printf("easy \n");
     CATERVA_ERROR(easy());
-    printf("wind1 \n");
+*/    printf("wind1 \n");
     CATERVA_ERROR(wind1());
     printf("air1 \n");
     CATERVA_ERROR(air1());

@@ -208,7 +208,11 @@ int comp(char* urlpath_input)
     H5Fclose (file_h5_w);
     H5Dclose (dset_cat_w);
     H5Dclose (dset_h5_w);
-
+/*
+    char command[50];
+    strcpy(command, "vmtouch -e h5ex_cat.h5 h5ex_h5.h5" );
+    system(command);
+*/
     // Open HDF5 datasets
     file_cat_r = H5Fopen (FILE_CAT, H5F_ACC_RDONLY, H5P_DEFAULT);
     dset_cat_r = H5Dopen (file_cat_r, DATASET_CAT, H5P_DEFAULT);
