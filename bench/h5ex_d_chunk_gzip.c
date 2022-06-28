@@ -7,7 +7,6 @@
  ************************************************************/
 
 #include "hdf5.h"
-#include "caterva.h"
 #include "blosc2.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,19 +83,24 @@ main (void)
     count[0] = 1;
     block[0] = chunksize;
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
+    if (status < 0) {
+        return -1;
+    }
 
     for(int nchunk = 0; nchunk < 64; nchunk++) {
         printf("\nchunk %d\n", nchunk);
         // Get chunk offset
         blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
-        for (int i = 0; i < ndim; ++i) {
+        for (i = 0; i < ndim; ++i) {
             offset[i] = (hsize_t) nchunk_ndim[i] * chunk[i];
         }
 
         // Use H5Dwrite to save caterva compressed buffer
         status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, chunksize * sizeof(int),
                                  &wdata[nchunk * chunksize]);
-
+        if (status < 0) {
+            return -1;
+        }
         start[0] = nchunk_ndim[0] * CHUNK0;
         start[1] = nchunk_ndim[1] * CHUNK1;
         stride[0] = CHUNK0;
@@ -107,9 +111,15 @@ main (void)
         block[1] = CHUNK1;
         status = H5Sselect_hyperslab (space, H5S_SELECT_SET, start, stride, count,
                                       block);
+        if (status < 0) {
+            return -1;
+        }
         // Use H5Dwrite to compress and save buffer using gzip
         status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                           &wdata[nchunk * chunksize]);
+        if (status < 0) {
+            return -1;
+        }
 
         for (i=0; i<chunksize; i++) {
                 printf(" %d", wdata[nchunk * chunksize + i]);
@@ -139,17 +149,23 @@ main (void)
     count[0] = 1;
     block[0] = chunksize;
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
+    if (status < 0) {
+        return -1;
+    }
 
     for(int nchunk = 0; nchunk < 64; nchunk++) {
         // Get chunk offset
         blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
-        for (int i = 0; i < ndim; ++i) {
+        for (i = 0; i < ndim; ++i) {
             offset[i] = nchunk_ndim[i] * chunk[i];
         }
 
         // Read caterva compressed buffer
         status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, (const hsize_t *) offset, &flt_msk,
                                rdata1);
+        if (status < 0) {
+            return -1;
+        }
 
         start[0] = nchunk_ndim[0] * CHUNK0;
         start[1] = nchunk_ndim[1] * CHUNK1;
@@ -161,9 +177,16 @@ main (void)
         block[1] = CHUNK1;
         status = H5Sselect_hyperslab (space, H5S_SELECT_SET, start, stride, count,
                                       block);
+        if (status < 0) {
+            return -1;
+        }
         // Read HDF5 buffer
         status = H5Dread (dset_h5_r, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
                           rdata2);
+        if (status < 0) {
+            return -1;
+        }
+
         for (i=0; i<chunksize; i++) {
             if (rdata1[i] != rdata2[i]) {
                 printf("Reads not equal for chunk %d item %llu: %d, %d", nchunk, i, rdata1[i], rdata2[i]);

@@ -104,7 +104,7 @@ int comp(char* urlpath_input)
     status = H5Pset_chunk (dcpl, ndim, chunks);
     dset_cat_w = H5Dcreate (file_cat_w, DATASET_CAT, type_h5, space, H5P_DEFAULT, dcpl,
                           H5P_DEFAULT);
-    if (dset_cat_w == NULL) {
+    if ((void *) dset_cat_w == NULL) {
         printf("Can not create HDF5 stream \n");
         free(chunk);
         free(cchunk);
@@ -117,7 +117,7 @@ int comp(char* urlpath_input)
     status = H5Pset_deflate (dcpl, 1);
     dset_h5_w = H5Dcreate (file_h5_w, DATASET_H5, type_h5, space, H5P_DEFAULT, dcpl,
                          H5P_DEFAULT);
-    if (dset_h5_w == NULL) {
+    if ((void *) dset_h5_w == NULL) {
         printf("Can not create HDF5 stream \n");
         free(chunk);
         free(cchunk);
@@ -131,6 +131,9 @@ int comp(char* urlpath_input)
     count[0] = 1;
     block[0] = chunknelems;
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
+    if (status < 0) {
+        return -1;
+    }
 
     for(int nchunk = 0; nchunk < arr->sc->nchunks; nchunk++) {
         // Get chunk
@@ -254,7 +257,7 @@ int comp(char* urlpath_input)
     // Open HDF5 datasets
     file_cat_r = H5Fopen (FILE_CAT, H5F_ACC_RDONLY, H5P_DEFAULT);
     dset_cat_r = H5Dopen (file_cat_r, DATASET_CAT, H5P_DEFAULT);
-    if (dset_cat_r == NULL) {
+    if ((void *) dset_cat_r == NULL) {
         printf("Can not open HDF5 stream \n");
         free(chunk);
         free(cchunk);
@@ -265,7 +268,7 @@ int comp(char* urlpath_input)
     }
     file_h5_r = H5Fopen (FILE_H5, H5F_ACC_RDONLY, H5P_DEFAULT);
     dset_h5_r = H5Dopen (file_h5_r, DATASET_H5, H5P_DEFAULT);
-    if (dset_h5_r == NULL) {
+    if ((void *) dset_h5_r == NULL) {
         printf("Can not open HDF5 stream \n");
         free(chunk);
         free(cchunk);

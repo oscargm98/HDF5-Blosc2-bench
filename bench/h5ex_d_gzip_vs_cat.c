@@ -115,6 +115,9 @@ int comp(char* urlpath_input)
     count[0] = 1;
     block[0] = chunknelems;
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
+    if (status < 0) {
+        return -1;
+    }
 
     for(int nchunk = 0; nchunk < arr->sc->nchunks; nchunk++) {
         // Get chunk offset
