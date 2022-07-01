@@ -4,7 +4,7 @@
   writing data to a dataset process using:
   - HDF5 with gzip + shuffle compression.
   - Blosc2 with zlib + shuffle compression
-  processing one chunk at a time.
+  processing the whole superchunk at once.
 
  ************************************************************/
 
@@ -56,17 +56,15 @@ int comp(char* urlpath_input)
     cparams.blocksize = arr->sc->blocksize;
     blosc2_context *cctx;
     cctx = blosc2_create_cctx(cparams);
-
-    blosc2_dparams dparams = BLOSC2_DPARAMS_DEFAULTS;
-    dparams.nthreads = 6;
-    blosc2_context *dctx;
-    dctx = blosc2_create_dctx(dparams);
+    blosc2_storage storage = {.cparams=&cparams, .contiguous=false, .urlpath = NULL};
+    blosc2_schunk* wschunk = blosc2_schunk_new(&storage);
+    blosc2_schunk* rschunk;
 
     int32_t chunksize = arr->sc->chunksize;
     uint8_t *chunk = malloc(chunksize);
     uint8_t *cchunk = malloc(chunksize);
     int32_t *buffer_cat = malloc(chunksize);
-    int32_t *cbuffer = malloc(chunksize);
+    uint8_t *cbuffer = malloc(arr->sc->nbytes);
     int32_t *buffer_h5 = malloc(chunksize);
 
     blosc_timestamp_t t0, t1;
@@ -106,10 +104,28 @@ int comp(char* urlpath_input)
     status = H5Pset_chunk (dcpl, ndim, chunks);
     dset_cat_w = H5Dcreate (file_cat_w, DATASET_CAT, type_h5, space, H5P_DEFAULT, dcpl,
                           H5P_DEFAULT);
+    if ((void *) dset_cat_w == NULL) {
+        printf("Can not create HDF5 stream \n");
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
+        return -1;
+    }
     status = H5Pset_shuffle (dcpl);
     status = H5Pset_deflate (dcpl, 1);
     dset_h5_w = H5Dcreate (file_h5_w, DATASET_H5, type_h5, space, H5P_DEFAULT, dcpl,
                          H5P_DEFAULT);
+    if ((void *) dset_h5_w == NULL) {
+        printf("Can not create HDF5 stream \n");
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
+        return -1;
+    }
     start[0] = 0;
     stride[0] = chunknelems;
     count[0] = 1;
@@ -120,12 +136,6 @@ int comp(char* urlpath_input)
     }
 
     for(int nchunk = 0; nchunk < arr->sc->nchunks; nchunk++) {
-        // Get chunk offset
-        blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
-        for (int i = 0; i < ndim; ++i) {
-            offset[i] = (hsize_t) nchunk_ndim[i] * extchunkshape[i];
-        }
-
         // Get chunk
         decompressed = blosc2_schunk_decompress_chunk(arr->sc, nchunk, chunk, (int32_t) chunksize);
         if (decompressed < 0) {
@@ -154,10 +164,9 @@ int comp(char* urlpath_input)
         } else {
             cat_cbytes += compressed;
         }
-
-        // Use H5Dwrite_chunk to save Blosc compressed buffer
-        status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, compressed, cchunk);
-        if (status < 0) {
+        int64_t append = blosc2_schunk_append_chunk(wschunk, cchunk, true);
+        if (append < 0) {
+            printf("Error appending chunk \n");
             free(chunk);
             free(cchunk);
             free(buffer_cat);
@@ -170,6 +179,7 @@ int comp(char* urlpath_input)
 
         // Use H5Dwrite to compress and save buffer using gzip
         blosc_set_timestamp(&t0);
+        blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
             start[i] = nchunk_ndim[i] * chunks[i];
             stride[i] = chunks[i];
@@ -199,6 +209,34 @@ int comp(char* urlpath_input)
         }
     }
 
+    // Convert Blosc superchunk to compressed frame
+    blosc_set_timestamp(&t0);
+    uint8_t *cframe = malloc(wschunk->nbytes);
+    bool needs_free;
+    int64_t frame_len = blosc2_schunk_to_buffer(wschunk, &cframe, &needs_free);
+    if (frame_len < 0) {
+        printf("Error getting schunk \n");
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
+        return -1;
+    }
+
+    // Use H5Dwrite_chunk to save Blosc compressed frame
+    status = H5Dwrite_chunk(dset_cat_w, H5P_DEFAULT, flt_msk, offset, frame_len, cframe);
+    if (status < 0) {
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
+        return -1;
+    }
+    blosc_set_timestamp(&t1);
+    cat_time_w += blosc_elapsed_secs(t0, t1);
+
     printf("nchunks: %ld\n", arr->sc->nchunks);
     printf("Caterva write: %f s\n", cat_time_w);
     printf("HDF5 write: %f s\n", h5_time_w);
@@ -219,8 +257,26 @@ int comp(char* urlpath_input)
     // Open HDF5 datasets
     file_cat_r = H5Fopen (FILE_CAT, H5F_ACC_RDONLY, H5P_DEFAULT);
     dset_cat_r = H5Dopen (file_cat_r, DATASET_CAT, H5P_DEFAULT);
+    if ((void *) dset_cat_r == NULL) {
+        printf("Can not open HDF5 stream \n");
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
+        return -1;
+    }
     file_h5_r = H5Fopen (FILE_H5, H5F_ACC_RDONLY, H5P_DEFAULT);
     dset_h5_r = H5Dopen (file_h5_r, DATASET_H5, H5P_DEFAULT);
+    if ((void *) dset_h5_r == NULL) {
+        printf("Can not open HDF5 stream \n");
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
+        return -1;
+    }
     dcpl = H5Dget_create_plist (dset_h5_r);
     space = H5Screate_simple (ndim, (const hsize_t *) extshape, NULL);
     mem_space = H5Screate_simple (1, &memsize, NULL);
@@ -229,17 +285,50 @@ int comp(char* urlpath_input)
     count[0] = 1;
     block[0] = chunknelems;
     status = H5Sselect_hyperslab (mem_space, H5S_SELECT_SET, start, stride, count, block);
-    hsize_t cbufsize;
+    int64_t cbufsize;
+
+    // Read Blosc compressed frame
+    blosc_set_timestamp(&t0);
+    status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, offset, &flt_msk, cbuffer);
+    if (status < 0) {
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
+        return -1;
+    }
+
+    // Get frame len
+    uint8_t aux_[8];
+    for (int i = 0; i < 8; ++i) {
+        aux_[i] = cbuffer[23 - i];
+    }
+    memcpy(&cbufsize, aux_, 8);
+
+    // Get compressed superchunk
+    rschunk = blosc2_schunk_from_buffer((uint8_t *) cbuffer, (int64_t) cbufsize, false);
+    if (rschunk == NULL) {
+        free(chunk);
+        free(cchunk);
+        free(buffer_cat);
+        free(cbuffer);
+        free(buffer_h5);
+        return -1;
+    }
+    blosc_set_timestamp(&t1);
+    cat_time_r += blosc_elapsed_secs(t0, t1);
+    blosc2_dparams dparams = BLOSC2_DPARAMS_DEFAULTS;
+    dparams.nthreads = 6;
+    dparams.schunk = rschunk;
+    blosc2_context *dctx;
+    dctx = blosc2_create_dctx(dparams);
+    bool needs_free2;
 
     for(int nchunk = 0; nchunk < arr->sc->nchunks; nchunk++) {
-        // Get chunk offset
-        blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
-        for (int i = 0; i < ndim; ++i) {
-            offset[i] = (hsize_t) nchunk_ndim[i] * extchunkshape[i];
-        }
-
         // Read HDF5 buffer
         blosc_set_timestamp(&t0);
+        blosc2_unidim_to_multidim((int8_t) ndim, (int64_t *) chunksdim, nchunk, (int64_t *) nchunk_ndim);
         for (int i = 0; i < ndim; ++i) {
             start[i] = nchunk_ndim[i] * chunks[i];
             stride[i] = chunks[i];
@@ -269,10 +358,12 @@ int comp(char* urlpath_input)
             return -1;
         }
 
-        // Read Blosc compressed buffer
+        // Decompress chunk using Blosc + ZLIB + SHUFFLE
         blosc_set_timestamp(&t0);
-        status = H5Dread_chunk(dset_cat_r, H5P_DEFAULT, offset, &flt_msk, cbuffer);
-        if (status < 0) {
+  //      decompressed = blosc2_schunk_decompress_chunk(rschunk, nchunk, buffer_cat, chunksize);
+        compressed = blosc2_schunk_get_lazychunk(rschunk, nchunk, &cchunk, &needs_free2);
+        if (compressed < 0) {
+            printf("Can not get lazy chunk %d \n", nchunk);
             free(chunk);
             free(cchunk);
             free(buffer_cat);
@@ -280,27 +371,24 @@ int comp(char* urlpath_input)
             free(buffer_h5);
             return -1;
         }
-
-        // Decompress chunk using Blosc + ZLIB + SHUFFLE
-        cbufsize = cbuffer[3];
-        decompressed = blosc2_decompress_ctx(dctx, cbuffer, (int32_t) cbufsize, buffer_cat, chunksize);
+        decompressed = blosc2_decompress_ctx(dctx, cchunk, compressed, buffer_cat, chunksize);
+        if (decompressed < 0) {
+            printf("Can not decompress chunk %d \n", nchunk);
+            free(chunk);
+            free(cchunk);
+            free(buffer_cat);
+            free(cbuffer);
+            free(buffer_h5);
+            return -1;
+        }
         blosc_set_timestamp(&t1);
         cat_time_r += blosc_elapsed_secs(t0, t1);
-
-        if (decompressed < 0) {
-            printf("Error Caterva decompress \n");
-            free(chunk);
-            free(cchunk);
-            free(buffer_cat);
-            free(cbuffer);
-            free(buffer_h5);
-            return -1;
-        }
 
         // Check that every buffer is equal
         for (int k = 0; k < decompressed / arr->itemsize; ++k) {
             if (buffer_h5[k] != buffer_cat[k]) {
                 printf("HDF5 output not equal to Blosc output: %d, %d \n", buffer_h5[k], buffer_cat[k]);
+                return -1;
             }
         }
     }
@@ -317,12 +405,20 @@ int comp(char* urlpath_input)
     H5Dclose (dset_h5_r);
     H5Fclose (file_h5_r);
     free(chunk);
-    free(cchunk);
+    if (needs_free2){
+        free(cchunk);
+    }
     free(buffer_cat);
     free(cbuffer);
     free(buffer_h5);
+    blosc2_free_ctx(dctx);
     caterva_free(ctx, &arr);
     caterva_ctx_free(&ctx);
+    blosc2_schunk_free(wschunk);
+    blosc2_schunk_free(rschunk);
+    if (needs_free) {
+        free(cframe);
+    }
 
     blosc_destroy();
 
@@ -331,52 +427,52 @@ int comp(char* urlpath_input)
 
 
 int solar1() {
-    int result = comp("../../bench/solar1.cat");
+    int result = comp("../../data/solar1.cat");
     return result;
 }
 
 int air1() {
-    int result = comp("../../bench/air1.cat");
+    int result = comp("../../data/air1.cat");
     return result;
 }
 
 int snow1() {
-    int result = comp("../../bench/snow1.cat");
+    int result = comp("../../data/snow1.cat");
     return result;
 }
 
 int wind1() {
-    int result = comp("../../bench/wind1.cat");
+    int result = comp("../../data/wind1.cat");
     return result;
 }
 
 int precip1() {
-    int result = comp("../../bench/precip1.cat");
+    int result = comp("../../data/precip1.cat");
     return result;
 }
 
 int precip2() {
-    int result = comp("../../bench/precip2.cat");
+    int result = comp("../../data/precip2.cat");
     return result;
 }
 
 int precip3() {
-    int result = comp("../../bench/precip3.cat");
+    int result = comp("../../data/precip3.cat");
     return result;
 }
 
 int precip3m() {
-    int result = comp("../../bench/precip-3m.cat");
+    int result = comp("../../data/precip-3m.cat");
     return result;
 }
 
 int easy() {
-    int result = comp("../../bench/easy.caterva");
+    int result = comp("../../data/easy.caterva");
     return result;
 }
 
 int cyclic() {
-    int result = comp("../../bench/cyclic.caterva");
+    int result = comp("../../data/cyclic.caterva");
     return result;
 }
 
@@ -400,7 +496,7 @@ int main() {
     CATERVA_ERROR(snow1());
     printf("precip1 \n");
     CATERVA_ERROR(precip1());
-    /*  printf("precip2 \n");
+  /*  printf("precip2 \n");
     CATERVA_ERROR(precip2());
     printf("precip3 \n");
     CATERVA_ERROR(precip3());

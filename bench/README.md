@@ -1,4 +1,4 @@
-# HDF5-Blosc2
+# Benchmarks
 
 To run the benchmarks with vmtouch, you just have to uncomment the next block of code:
 

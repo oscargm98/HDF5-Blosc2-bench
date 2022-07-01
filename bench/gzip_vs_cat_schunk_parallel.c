@@ -402,52 +402,52 @@ int comp(char* urlpath_input)
 
 
 int solar1() {
-    int result = comp("../../bench/solar1.cat");
+    int result = comp("../../data/solar1.cat");
     return result;
 }
 
 int air1() {
-    int result = comp("../../bench/air1.cat");
+    int result = comp("../../data/air1.cat");
     return result;
 }
 
 int snow1() {
-    int result = comp("../../bench/snow1.cat");
+    int result = comp("../../data/snow1.cat");
     return result;
 }
 
 int wind1() {
-    int result = comp("../../bench/wind1.cat");
+    int result = comp("../../data/wind1.cat");
     return result;
 }
 
 int precip1() {
-    int result = comp("../../bench/precip1.cat");
+    int result = comp("../../data/precip1.cat");
     return result;
 }
 
 int precip2() {
-    int result = comp("../../bench/precip2.cat");
+    int result = comp("../../data/precip2.cat");
     return result;
 }
 
 int precip3() {
-    int result = comp("../../bench/precip3.cat");
+    int result = comp("../../data/precip3.cat");
     return result;
 }
 
 int precip3m() {
-    int result = comp("../../bench/precip-3m.cat");
+    int result = comp("../../data/precip-3m.cat");
     return result;
 }
 
 int easy() {
-    int result = comp("../../bench/easy.caterva");
+    int result = comp("../../data/easy.caterva");
     return result;
 }
 
 int cyclic() {
-    int result = comp("../../bench/cyclic.caterva");
+    int result = comp("../../data/cyclic.caterva");
     return result;
 }
 

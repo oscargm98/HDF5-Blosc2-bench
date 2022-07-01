@@ -12,4 +12,3 @@ set_target_properties(BLOSC2_LIBRARY PROPERTIES IMPORTED_LOCATION "/mnt/c/Users/
 
 
 add_subdirectory(bench)
-add_subdirectory(H5D)
