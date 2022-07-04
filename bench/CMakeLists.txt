@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.18)
 project (HDF5-Blosc2_C_H5D)
 
-file(GLOB SOURCES h5ex_d_*.c)
+file(GLOB SOURCES chunk_gzip.c gzip_vs_cat*.c)
 
 include_directories("/home/soscar/miniconda3/include")
 
