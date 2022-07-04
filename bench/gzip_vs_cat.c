@@ -371,12 +371,12 @@ int precip3m() {
 }
 
 int easy() {
-    int result = comp("../../data/easy.caterva");
+    int result = comp("../../data/easy.cat");
     return result;
 }
 
 int cyclic() {
-    int result = comp("../../data/cyclic.caterva");
+    int result = comp("../../data/cyclic.cat");
     return result;
 }
 

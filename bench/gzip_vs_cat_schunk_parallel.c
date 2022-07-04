@@ -442,12 +442,12 @@ int precip3m() {
 }
 
 int easy() {
-    int result = comp("../../data/easy.caterva");
+    int result = comp("../../data/easy.cat");
     return result;
 }
 
 int cyclic() {
-    int result = comp("../../data/cyclic.caterva");
+    int result = comp("../../data/cyclic.cat");
     return result;
 }
 
@@ -461,7 +461,7 @@ int main() {
     CATERVA_ERROR(cyclic());
  */   printf("easy \n");
     CATERVA_ERROR(easy());
-/*    printf("wind1 \n");
+    printf("wind1 \n");
     CATERVA_ERROR(wind1());
     printf("air1 \n");
     CATERVA_ERROR(air1());
