@@ -89,6 +89,9 @@ int comp(char* urlpath_input)
     // Create HDF5 datasets
     hid_t type_h5;
     switch (arr->itemsize) {
+        case 1:
+            type_h5 = H5T_STD_I8LE;
+            break;
         case 4:
             type_h5 = H5T_STD_I32LE;
             break;
@@ -103,7 +106,7 @@ int comp(char* urlpath_input)
     dcpl = H5Pcreate (H5P_DATASET_CREATE);
     status = H5Pset_chunk (dcpl, ndim, chunks);
     dset_cat_w = H5Dcreate (file_cat_w, DATASET_CAT, type_h5, space, H5P_DEFAULT, dcpl,
-                          H5P_DEFAULT);
+                            H5P_DEFAULT);
     if ((void *) dset_cat_w == NULL) {
         printf("Can not create HDF5 stream \n");
         free(chunk);
@@ -195,7 +198,7 @@ int comp(char* urlpath_input)
             free(buffer_h5);
             return -1;
         }
-        status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
+        status = H5Dwrite(dset_h5_w, type_h5, mem_space, space, H5P_DEFAULT,
                           chunk);
         blosc_set_timestamp(&t1);
         h5_time_w += blosc_elapsed_secs(t0, t1);
@@ -345,7 +348,7 @@ int comp(char* urlpath_input)
             free(buffer_h5);
             return -1;
         }
-        status = H5Dread (dset_h5_r, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
+        status = H5Dread (dset_h5_r, type_h5, mem_space, space, H5P_DEFAULT,
                           buffer_h5);
         blosc_set_timestamp(&t1);
         h5_time_r += blosc_elapsed_secs(t0, t1);

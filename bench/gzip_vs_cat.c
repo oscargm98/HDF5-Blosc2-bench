@@ -91,6 +91,9 @@ int comp(char* urlpath_input)
     // Create HDF5 datasets
     hid_t type_h5;
     switch (arr->itemsize) {
+        case 1:
+            type_h5 = H5T_STD_I8LE;
+            break;
         case 4:
             type_h5 = H5T_STD_I32LE;
             break;
@@ -109,7 +112,7 @@ int comp(char* urlpath_input)
     status = H5Pset_shuffle (dcpl);
     status = H5Pset_deflate (dcpl, 1);
     dset_h5_w = H5Dcreate (file_h5_w, DATASET_H5, type_h5, space, H5P_DEFAULT, dcpl,
-                         H5P_DEFAULT);
+                           H5P_DEFAULT);
     start[0] = 0;
     stride[0] = chunknelems;
     count[0] = 1;
@@ -185,7 +188,7 @@ int comp(char* urlpath_input)
             free(buffer_h5);
             return -1;
         }
-        status = H5Dwrite(dset_h5_w, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
+        status = H5Dwrite(dset_h5_w, type_h5, mem_space, space, H5P_DEFAULT,
                           chunk);
         blosc_set_timestamp(&t1);
         h5_time_w += blosc_elapsed_secs(t0, t1);
@@ -256,7 +259,7 @@ int comp(char* urlpath_input)
             free(buffer_h5);
             return -1;
         }
-        status = H5Dread (dset_h5_r, H5T_NATIVE_INT, mem_space, space, H5P_DEFAULT,
+        status = H5Dread (dset_h5_r, type_h5, mem_space, space, H5P_DEFAULT,
                           buffer_h5);
         blosc_set_timestamp(&t1);
         h5_time_r += blosc_elapsed_secs(t0, t1);
@@ -385,12 +388,12 @@ int main() {
     unsigned majnum, minnum, vers;
     if (H5get_libversion(&majnum, &minnum, &vers) >= 0)
         printf("HDF5 working with version %d.%d.%d \n", majnum, minnum, vers);
-/*
-    printf("cyclic \n");
-    CATERVA_ERROR(cyclic());
+
+//    printf("cyclic \n");
+  //  CATERVA_ERROR(cyclic());
     printf("easy \n");
     CATERVA_ERROR(easy());
- */   printf("wind1 \n");
+ /*   printf("wind1 \n");
     CATERVA_ERROR(wind1());
     printf("air1 \n");
     CATERVA_ERROR(air1());
